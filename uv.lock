@@ -1373,12 +1373,14 @@ version = "1.0.0"
 source = { editable = "sim" }
 dependencies = [
     { name = "numpy" },
+    { name = "scipy" },
     { name = "warehouse" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=2.1" },
+    { name = "scipy", specifier = ">=1.18" },
     { name = "warehouse", editable = "warehouse" },
 ]
 

@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "warehouse",
     "numpy>=2.1",
+    "scipy>=1.18",
 ]
 
 [build-system]
