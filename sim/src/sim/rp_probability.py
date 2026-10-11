@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import fmean
 
 import numpy as np
@@ -11,7 +11,8 @@ import numpy.typing as npt
 from scipy.optimize import minimize
 from scipy.special import ndtr
 
-from warehouse.rules.model import BonusRp, to_column_name
+from sim.rp_source import Identity, Recovery, RpSource
+from warehouse.rules.model import to_column_name
 
 Floats = npt.NDArray[np.float64]
 
@@ -19,21 +20,24 @@ HALF_STEP = 0.5
 BUCKETS = 10
 LOWEST_CAP_BUCKET_INDEX = 6
 CLIP = 1e-9
+IDENTITY = Identity()
 
 
 @dataclass(frozen=True, slots=True)
 class RpCurve:
-    """A generic model on an alliance's summed RP component EPA to estimate RP probability.
+    """A generic model on an alliance's predicted points for an RP to estimate the RP's probability.
 
-    Requires a point-based RP threshold, and is meant to be a reasonable first aproximation from coarse data.
+    The RP's threshold is turned into points by the curve's recovery, and is meant to be a reasonable first aproximation
+    from coarse data.
 
     Attributes:
-        shift: Points added to the summed EPA.
-        log_sd: Log of the spread at a summed EPA of zero.
-        log_sd_slope: Growth of the log spread per point of summed EPA.
+        shift: Points added to the predicted points.
+        log_sd: Log of the spread at zero predicted points.
+        log_sd_slope: Growth of the log spread per predicted point.
         cap: The highest probability the curve gives.
         rows: Alliance-rows the curve was fitted on.
         provisional: True when earlier seasons stand in.
+        recovery: How the RP's quantity is recovered from points.
     """
 
     shift: float
@@ -42,24 +46,43 @@ class RpCurve:
     cap: float = 1.0
     rows: int = 0
     provisional: bool = False
+    recovery: Recovery = IDENTITY
 
-    def uncapped(self, epa_sum: Floats, threshold: float | Floats) -> Floats:
-        mean = np.asarray(epa_sum, dtype=np.float64) + self.shift
-        sd = np.exp(self.log_sd + self.log_sd_slope * np.asarray(epa_sum, dtype=np.float64))
-        return np.asarray(ndtr((mean - (np.asarray(threshold, dtype=np.float64) - HALF_STEP)) / sd), dtype=np.float64)
+    def points_threshold(self, threshold: float | Floats) -> Floats:
+        """Each RP threshold as the fewest points whose recovered quantity reaches it."""
+        t = np.asarray(threshold, dtype=np.float64)
+        unique, inverse = np.unique(t, return_inverse=True)
+        converted = np.array([self.recovery.points_threshold(float(u)) for u in unique], dtype=np.float64)
+        return converted[inverse].reshape(t.shape)
 
-    def probability(self, epa_sum: Floats, threshold: float | Floats) -> Floats:
-        """The chance each alliance reaches ``threshold``."""
-        return np.minimum(self.uncapped(epa_sum, threshold), self.cap)
+    def uncapped_at(self, points: Floats, points_threshold: float | Floats) -> Floats:
+        """The uncapped chance each alliance reaches a threshold already in points."""
+        p = np.asarray(points, dtype=np.float64)
+        sd = np.exp(self.log_sd + self.log_sd_slope * p)
+        return np.asarray(ndtr((p + self.shift - (np.asarray(points_threshold) - HALF_STEP)) / sd), dtype=np.float64)
+
+    def uncapped(self, points: Floats, threshold: float | Floats) -> Floats:
+        return self.uncapped_at(points, self.points_threshold(threshold))
+
+    def probability(self, points: Floats, threshold: float | Floats) -> Floats:
+        """The chance each alliance reaches the RP's ``threshold``."""
+        return np.minimum(self.uncapped(points, threshold), self.cap)
 
 
-def epa_sum(bonus: BonusRp, *teams: Mapping[str, float]) -> float:
-    """The alliance's EPA on the components ``bonus`` sums, from each team's EPA components keyed by column name."""
-    columns = [to_column_name(name) for name in bonus.sum_of]
+def points_sum(source: RpSource, *teams: Mapping[str, float]) -> float:
+    """The alliance's predicted points for an RP, from each team's predicted components keyed by column name."""
+    columns = [to_column_name(name) for name in source.points_from]
     missing = sorted({c for c in columns for team in teams if c not in team})
     if missing:
-        raise ValueError(f"{bonus.component}: EPA does not rate {missing}")
+        raise ValueError(f"predictions lack {missing}")
     return float(sum(team[c] for team in teams for c in columns))
+
+
+def fit_recovery(source: RpSource, observed_points: Floats, observed_quantity: Floats) -> Recovery:
+    """The source's recovery refit on observed rows, or as declared when there are none."""
+    if len(observed_points) == 0:
+        return source.recovery
+    return source.recovery.fit(observed_points, observed_quantity)
 
 
 def log_loss(predicted: Floats, earned: npt.NDArray[np.bool_]) -> float:
@@ -78,31 +101,39 @@ def top_bucket_cap(predicted: Floats, earned: npt.NDArray[np.bool_], *, min_rows
 
 
 def fit_curve(
-    epa_sums: Floats,
+    points: Floats,
     thresholds: Floats,
     earned: npt.NDArray[np.bool_],
     *,
+    source: RpSource,
+    observed_points: Floats,
+    observed_quantity: Floats,
     min_bucket_rows: int,
     start: RpCurve | None = None,
 ) -> RpCurve:
-    """The curve that minimizes log loss on these rows, then its cap from the same rows."""
-    if len(epa_sums) == 0:
+    """The source's recovery fitted on the observed rows, then the curve that minimizes log loss and its cap.
+
+    ``points`` are predicted, ``thresholds`` are the RP's own, and the observed points and quantity are the RP's
+    ``points_from`` sum and ``sum_of`` sum from each row's breakdown.
+    """
+    if len(points) == 0:
         raise ValueError("no rows to fit an RP curve on")
-    first = start or RpCurve(shift=0.0, log_sd=float(np.log(np.std(epa_sums) + 1.0)), log_sd_slope=0.0)
+    recovery = fit_recovery(source, observed_points, observed_quantity)
+    first = start or RpCurve(shift=0.0, log_sd=float(np.log(np.std(points) + 1.0)), log_sd_slope=0.0)
+    t = RpCurve(0.0, 0.0, 0.0, recovery=recovery).points_threshold(thresholds)
 
     def loss(w: Floats) -> float:
-        return log_loss(RpCurve(w[0], w[1], w[2]).uncapped(epa_sums, thresholds), earned)
+        return log_loss(RpCurve(w[0], w[1], w[2]).uncapped_at(points, t), earned)
 
     w = minimize(
         loss, np.array([first.shift, first.log_sd, first.log_sd_slope]), method="Nelder-Mead", options={"maxiter": 4000}
     ).x
-    curve = RpCurve(shift=float(w[0]), log_sd=float(w[1]), log_sd_slope=float(w[2]), rows=len(epa_sums))
-    cap = top_bucket_cap(curve.uncapped(epa_sums, thresholds), earned, min_rows=min_bucket_rows)
-    return RpCurve(curve.shift, curve.log_sd, curve.log_sd_slope, cap=cap, rows=curve.rows)
+    curve = RpCurve(float(w[0]), float(w[1]), float(w[2]), rows=len(points), recovery=recovery)
+    return replace(curve, cap=top_bucket_cap(curve.uncapped_at(points, t), earned, min_rows=min_bucket_rows))
 
 
-def provisional_curve(previous: Sequence[RpCurve]) -> RpCurve:
-    """The stand-in until a season has enough rows: the average of earlier seasons' curves."""
+def provisional_curve(previous: Sequence[RpCurve], recovery: Recovery) -> RpCurve:
+    """The stand-in until a season has enough rows: earlier seasons' curves averaged, on this season's recovery."""
     if not previous:
         raise ValueError("no earlier season's RP curve to stand in")
     return RpCurve(
@@ -111,19 +142,31 @@ def provisional_curve(previous: Sequence[RpCurve]) -> RpCurve:
         log_sd_slope=fmean(c.log_sd_slope for c in previous),
         cap=fmean(c.cap for c in previous),
         provisional=True,
+        recovery=recovery,
     )
 
 
 def resolve_curve(
-    epa_sums: Floats,
+    points: Floats,
     thresholds: Floats,
     earned: npt.NDArray[np.bool_],
     *,
+    source: RpSource,
+    observed_points: Floats,
+    observed_quantity: Floats,
     min_rows: int,
     min_bucket_rows: int,
     previous: Sequence[RpCurve],
 ) -> RpCurve:
     """The season's curve from its rows so far, or the earlier seasons' until it has ``min_rows``."""
-    if len(epa_sums) < min_rows:
-        return provisional_curve(previous)
-    return fit_curve(epa_sums, thresholds, earned, min_bucket_rows=min_bucket_rows)
+    if len(points) < min_rows:
+        return provisional_curve(previous, fit_recovery(source, observed_points, observed_quantity))
+    return fit_curve(
+        points,
+        thresholds,
+        earned,
+        source=source,
+        observed_points=observed_points,
+        observed_quantity=observed_quantity,
+        min_bucket_rows=min_bucket_rows,
+    )
