@@ -5,9 +5,6 @@ from __future__ import annotations
 from sim.rp_probability import RpCurve
 from sim.rp_source import Ratio
 
-# Qualification alliance-rows a season needs before its own RP curves replace earlier seasons'.
-RP_CURVE_MIN_ROWS = 4000
-
 # Rows the bucket that sets an RP curve's cap must hold.
 RP_CAP_MIN_ROWS = 100
 

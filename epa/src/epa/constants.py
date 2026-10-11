@@ -10,11 +10,9 @@ from dataclasses import dataclass
 
 from epa.model import Schedule
 from epa.scale import Carryover, LayoffBoost, Scale
+from warehouse.constants import INIT_WINDOW
 
 MODEL_VERSION = "epa-0.10.0"
-
-# How many alliance-rows in event-sequential order define the season-start field.
-INIT_WINDOW = 4000
 
 # Whole-season alliance no-foul score distributions, measured under `score - opponent_committed`.
 MEASURED_SEASON_SCALES: dict[int, Scale] = {

@@ -16,7 +16,6 @@ from datetime import date
 import structlog
 
 from epa.constants import (
-    INIT_WINDOW,
     MEASURED_INIT_SCALES,
     MODEL_VERSION,
     SeasonConstants,
@@ -34,6 +33,7 @@ from epa.partition import PartitionReport, assert_partition, series
 from epa.replay import TAG_POST_EVENT, EpaRow, ReplayResult, TeamSeed, replay_season
 from epa.scale import Scale, compute_scale, provisional_scale
 from warehouse.client import Warehouse
+from warehouse.constants import INIT_WINDOW
 from warehouse.rules.partition import ResolvedPartition, season_partition
 from warehouse.schema.types import QUALIFICATION_MATCHES
 
