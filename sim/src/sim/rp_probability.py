@@ -78,6 +78,21 @@ def points_sum(source: RpSource, *teams: Mapping[str, float]) -> float:
     return float(sum(team[c] for team in teams for c in columns))
 
 
+def draw_bonus(
+    probabilities: Mapping[str, Floats], sources: Mapping[str, RpSource], rng: np.random.Generator
+) -> dict[str, npt.NDArray[np.bool_]]:
+    """Whether each alliance earns each bonus RP, keyed by rule-pack component."""
+    uniforms: dict[RpSource, Floats] = {}
+    earned: dict[str, npt.NDArray[np.bool_]] = {}
+    for component, probability in probabilities.items():
+        p = np.asarray(probability, dtype=np.float64)
+        source = sources[component]
+        if source not in uniforms:
+            uniforms[source] = rng.random(p.shape)
+        earned[component] = uniforms[source] < p
+    return earned
+
+
 def fit_recovery(source: RpSource, observed_points: Floats, observed_quantity: Floats) -> Recovery:
     """The source's recovery refit on observed rows, or as declared when there are none."""
     if len(observed_points) == 0:
