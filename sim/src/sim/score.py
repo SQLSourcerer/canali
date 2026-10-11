@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import fmean
 
 import numpy as np
 import numpy.typing as npt
-from scipy import optimize, stats
+from scipy import optimize, special, stats
 
 Floats = npt.NDArray[np.float64]
 Ints = npt.NDArray[np.int64]
@@ -18,13 +18,23 @@ MIN_FIT_PREDICTION = 5.0
 # Bounds on intercept, slope, log dispersion, log of dof above 2, and log skew.
 FIT_BOUNDS = ((-50.0, 50.0), (0.2, 3.0), (np.log(0.5), np.log(300.0)), (np.log(0.5), np.log(500.0)), (-1.5, 1.5))
 
+# Gauss-Legendre nodes on (0, 1) for a match's win probability.
+_NODES, _WEIGHTS = np.polynomial.legendre.leggauss(32)
+QUANTILES, QUANTILE_WEIGHTS = (_NODES + 1.0) / 2.0, _WEIGHTS / 2.0
+
+# Bounds on the result noise's standard deviation, in points.
+FOUL_SD_BOUNDS = (0.0, 100.0)
+FIT_CHUNK = 4096
+CLIP = 1e-9
+
 
 @dataclass(frozen=True, slots=True)
 class ScoreModel:
     """A skewed Student-t on an alliance's score, its variance proportional to the predicted score.
 
     ``score = intercept + slope * mu + sqrt(dispersion * mu) * e``, with ``e`` a Fernandez-Steel skewed t, rounded to
-    whole points and floored at zero. The two alliances of a match are drawn independently.
+    whole points and floored at zero. The two alliances of a match are drawn independently. The official result adds a
+    zero-mean normal of ``foul_variance`` to each alliance's score, standing in for foul points.
 
     Attributes:
         intercept: Points added to every alliance's location.
@@ -32,6 +42,7 @@ class ScoreModel:
         dispersion: Variance per predicted point.
         dof: Degrees of freedom of the t.
         skew: Ratio of the right tail's scale to the left's; 1 is symmetric.
+        foul_variance: Variance of the noise on each alliance's score that decides the official result.
         rows: Alliance-rows the model was fitted on.
         provisional: True when earlier seasons stand in.
     """
@@ -41,6 +52,7 @@ class ScoreModel:
     dispersion: float
     dof: float
     skew: float
+    foul_variance: float = 0.0
     rows: int = 0
     provisional: bool = False
 
@@ -50,16 +62,40 @@ class ScoreModel:
     def scale(self, mu: Floats) -> Floats:
         return np.sqrt(self.dispersion * np.maximum(np.asarray(mu, dtype=np.float64), 0.0))
 
-    def standard(self, shape: tuple[int, ...], rng: np.random.Generator) -> Floats:
-        """Standard skewed-t draws: positive with probability ``skew**2 / (1 + skew**2)``, stretched by ``skew``."""
-        magnitude = np.abs(rng.standard_t(self.dof, shape))
-        right = rng.random(shape) < self.skew**2 / (1.0 + self.skew**2)
-        return np.where(right, magnitude * self.skew, -magnitude / self.skew)
+    def standard_quantile(self, u: Floats) -> Floats:
+        """The standard skewed t at probability ``u``."""
+        u = np.asarray(u, dtype=np.float64)
+        g2 = self.skew**2
+        below = u < 1.0 / (1.0 + g2)
+        left = special.stdtrit(self.dof, u * (1.0 + g2) / 2.0) / self.skew
+        right = special.stdtrit(self.dof, (1.0 + (u - 1.0 / (1.0 + g2)) * (1.0 + 1.0 / g2)) / 2.0) * self.skew
+        return np.asarray(np.where(below, left, right), dtype=np.float64)
+
+    def quantile(self, mu: Floats, u: Floats) -> Floats:
+        """The score at probability ``u`` around each predicted score, before rounding."""
+        return self.location(mu) + self.scale(mu) * self.standard_quantile(u)
+
+    def cdf(self, mu: Floats, score: Floats) -> Floats:
+        """The probability of a score at most ``score``, before rounding; rows with no spread are left as NaN."""
+        scale = self.scale(mu)
+        z = np.divide(
+            np.asarray(score, dtype=np.float64) - self.location(mu),
+            scale,
+            out=np.full(np.shape(scale), np.nan),
+            where=scale > 0,
+        )
+        g2 = self.skew**2
+        below = 2.0 / (1.0 + g2) * special.stdtr(self.dof, z * self.skew)
+        above = 1.0 / (1.0 + g2) + 2.0 * g2 / (1.0 + g2) * (special.stdtr(self.dof, z / self.skew) - 0.5)
+        return np.asarray(np.where(z < 0, below, above), dtype=np.float64)
 
     def sample(self, mu: Floats, rng: np.random.Generator) -> Ints:
         """One whole-point score per predicted score in ``mu``."""
         mu = np.asarray(mu, dtype=np.float64)
-        score = self.location(mu) + self.scale(mu) * self.standard(mu.shape, rng)
+        return self.whole_points(self.quantile(mu, rng.random(mu.shape)))
+
+    @staticmethod
+    def whole_points(score: Floats) -> Ints:
         return np.maximum(np.rint(score), 0.0).astype(np.int64)
 
     def log_density(self, mu: Floats, score: Floats) -> Floats:
@@ -103,6 +139,35 @@ def fit_score_model(mu: Floats, score: Floats, *, start: ScoreModel | None = Non
     return _from_vector(w, rows=len(mu))
 
 
+def fit_foul_variance(model: ScoreModel, mu: Floats, outcome: Floats) -> float:
+    """The result noise variance that minimizes log loss on official results.
+
+    ``mu`` is each match's predicted scores shaped ``(match, alliance)``, and ``outcome`` the first alliance's official
+    result: 1 for a win, a half for a tie, 0 for a loss.
+    """
+    mu = np.asarray(mu, dtype=np.float64)
+    outcome = np.asarray(outcome, dtype=np.float64)
+    if len(mu) == 0:
+        raise ValueError("no matches to fit the result noise on")
+    first = model.quantile(mu[:, :1], QUANTILES[None, :])
+    second = model.quantile(mu[:, 1:], QUANTILES[None, :])
+    weights = np.outer(QUANTILE_WEIGHTS, QUANTILE_WEIGHTS)
+
+    def loss(sd: float) -> float:
+        total = 0.0
+        for start in range(0, len(mu), FIT_CHUNK):
+            chunk = slice(start, start + FIT_CHUNK)
+            margin = first[chunk, :, None] - second[chunk, None, :]
+            p = np.einsum("mij,ij->m", special.ndtr(margin / max(sd * np.sqrt(2.0), CLIP)), weights)
+            p = np.clip(p, CLIP, 1.0 - CLIP)
+            o = outcome[chunk]
+            total -= float(np.sum(o * np.log(p) + (1.0 - o) * np.log(1.0 - p)))
+        return total / len(mu)
+
+    sd = optimize.minimize_scalar(loss, bounds=FOUL_SD_BOUNDS, method="bounded").x
+    return float(sd**2)
+
+
 def provisional_score_model(previous: Sequence[ScoreModel]) -> ScoreModel:
     """The stand-in until a season has enough rows: earlier seasons' models averaged."""
     if not previous:
@@ -113,12 +178,25 @@ def provisional_score_model(previous: Sequence[ScoreModel]) -> ScoreModel:
         dispersion=fmean(m.dispersion for m in previous),
         dof=fmean(m.dof for m in previous),
         skew=fmean(m.skew for m in previous),
+        foul_variance=fmean(m.foul_variance for m in previous),
         provisional=True,
     )
 
 
-def resolve_score_model(mu: Floats, score: Floats, *, min_rows: int, previous: Sequence[ScoreModel]) -> ScoreModel:
-    """The season's model from its rows so far, or the earlier seasons' until it has ``min_rows``."""
+def resolve_score_model(
+    mu: Floats,
+    score: Floats,
+    *,
+    match_mu: Floats,
+    outcome: Floats,
+    min_rows: int,
+    previous: Sequence[ScoreModel],
+) -> ScoreModel:
+    """The season's model and result noise from its rows so far, or the earlier seasons' until it has ``min_rows``.
+
+    ``match_mu`` and ``outcome`` are the matches the result noise is fitted on, as ``fit_foul_variance`` takes them.
+    """
     if len(mu) < min_rows:
         return provisional_score_model(previous)
-    return fit_score_model(mu, score, start=provisional_score_model(previous) if previous else None)
+    model = fit_score_model(mu, score, start=provisional_score_model(previous) if previous else None)
+    return replace(model, foul_variance=fit_foul_variance(model, match_mu, outcome))

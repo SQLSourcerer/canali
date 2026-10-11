@@ -8,8 +8,8 @@ from statistics import fmean
 
 import numpy as np
 import numpy.typing as npt
-from scipy.optimize import minimize
-from scipy.special import ndtr
+from scipy.optimize import minimize, minimize_scalar
+from scipy.special import ndtr, ndtri
 
 from sim.rp_source import Identity, Recovery, RpSource
 from warehouse.rules.model import to_column_name
@@ -21,6 +21,7 @@ BUCKETS = 10
 LOWEST_CAP_BUCKET_INDEX = 6
 CLIP = 1e-9
 IDENTITY = Identity()
+CORRELATION_BOUND = 0.99
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,7 @@ class RpCurve:
         rows: Alliance-rows the curve was fitted on.
         provisional: True when earlier seasons stand in.
         recovery: How the RP's quantity is recovered from points.
+        correlation: How closely earning the RP follows the alliance's score draw, on the latent normal scale.
     """
 
     shift: float
@@ -47,6 +49,7 @@ class RpCurve:
     rows: int = 0
     provisional: bool = False
     recovery: Recovery = IDENTITY
+    correlation: float = 0.0
 
     def points_threshold(self, threshold: float | Floats) -> Floats:
         """Each RP threshold as the fewest points whose recovered quantity reaches it."""
@@ -79,18 +82,44 @@ def points_sum(source: RpSource, *teams: Mapping[str, float]) -> float:
 
 
 def draw_bonus(
-    probabilities: Mapping[str, Floats], sources: Mapping[str, RpSource], rng: np.random.Generator
+    probabilities: Mapping[str, Floats],
+    sources: Mapping[str, RpSource],
+    rng: np.random.Generator,
+    *,
+    latent: Floats | None = None,
+    correlations: Mapping[str, float] | None = None,
 ) -> dict[str, npt.NDArray[np.bool_]]:
-    """Whether each alliance earns each bonus RP, keyed by rule-pack component."""
-    uniforms: dict[RpSource, Floats] = {}
+    """Whether each alliance earns each bonus RP, keyed by rule-pack component.
+
+    Each RP is earned when ``correlation * latent + sqrt(1 - correlation**2) * noise`` clears its probability, the noise
+    shared by RPs on one source and ``latent`` the alliance's score draw on the normal scale.
+    """
+    noise: dict[RpSource, Floats] = {}
     earned: dict[str, npt.NDArray[np.bool_]] = {}
     for component, probability in probabilities.items():
         p = np.asarray(probability, dtype=np.float64)
         source = sources[component]
-        if source not in uniforms:
-            uniforms[source] = rng.random(p.shape)
-        earned[component] = uniforms[source] < p
+        if source not in noise:
+            noise[source] = rng.standard_normal(p.shape)
+        rho = 0.0 if latent is None or correlations is None else correlations.get(component, 0.0)
+        x = noise[source] if rho == 0.0 else rho * np.asarray(latent) + np.sqrt(1.0 - rho**2) * noise[source]
+        earned[component] = ndtr(-x) < p
     return earned
+
+
+def fit_correlation(probabilities: Sequence[Floats], earned: Sequence[npt.NDArray[np.bool_]], latent: Floats) -> float:
+    """The one correlation with ``latent`` that maximizes the likelihood of RPs drawn on one source."""
+    z = np.asarray(latent, dtype=np.float64)
+    pairs = [(ndtri(np.clip(p, CLIP, 1.0 - CLIP)), e) for p, e in zip(probabilities, earned, strict=True)]
+
+    def loss(rho: float) -> float:
+        total = 0.0
+        for a, e in pairs:
+            q = np.clip(ndtr((a + rho * z) / np.sqrt(1.0 - rho**2)), CLIP, 1.0 - CLIP)
+            total -= float(np.sum(np.where(e, np.log(q), np.log(1.0 - q))))
+        return total
+
+    return float(minimize_scalar(loss, bounds=(-CORRELATION_BOUND, CORRELATION_BOUND), method="bounded").x)
 
 
 def fit_recovery(source: RpSource, observed_points: Floats, observed_quantity: Floats) -> Recovery:
@@ -158,6 +187,7 @@ def provisional_curve(previous: Sequence[RpCurve], recovery: Recovery) -> RpCurv
         cap=fmean(c.cap for c in previous),
         provisional=True,
         recovery=recovery,
+        correlation=fmean(c.correlation for c in previous),
     )
 
 

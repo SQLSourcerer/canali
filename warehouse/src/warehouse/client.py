@@ -108,6 +108,7 @@ class PreMatchRatingRow:
     alliance: str
     event_type: str | None
     event_date_start: date | None
+    score: float
     score_no_foul: float
     components: tuple[dict[str, float], ...]
 
@@ -369,7 +370,7 @@ class Warehouse:
         """
         sql = text(
             f"""
-            SELECT m.match_id, m.alliance, m.event_type, m.event_date_start, m.score_no_foul,
+            SELECT m.match_id, m.alliance, m.event_type, m.event_date_start, m.score, m.score_no_foul,
                    array_agg(r.components ORDER BY t.station) AS components,
                    count(*) AS rated, max(m.rated_count) AS expected
             FROM (
@@ -389,7 +390,7 @@ class Warehouse:
             ) r
             WHERE NOT t.no_show
             GROUP BY s.event_ordinal, m.event_match_ordinal, m.match_id, m.alliance, m.event_type, m.event_date_start,
-                     m.score_no_foul
+                     m.score, m.score_no_foul
             ORDER BY s.event_ordinal, m.event_match_ordinal, m.alliance
             """
         )
@@ -400,6 +401,7 @@ class Warehouse:
                     alliance=r.alliance,
                     event_type=r.event_type,
                     event_date_start=r.event_date_start,
+                    score=float(r.score or 0.0),
                     score_no_foul=float(r.score_no_foul or 0.0),
                     components=tuple(dict(c or {}) for c in r.components),
                 )
