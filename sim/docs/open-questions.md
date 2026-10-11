@@ -11,3 +11,7 @@ Modelling each robot's state, such as leave and park, beat the EPA aproximation 
 ## Create non-generic formulas for specific RP types
 
 Every RP oddsmaking is currently routed through a metric's predicted points. More specific models should be made to account for foul-granted RP, counting-based RP, team-separable performance. The universal model is not hald bad, but there is plenty left on the table.
+
+## Rating uncertainty that shrinks through an event
+
+The score model draws every match independently with one spread per season. Early predictions are less certain because the ratings have seen few of the event's matches, can we take advantage of that for better predictions?
