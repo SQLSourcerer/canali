@@ -6,12 +6,14 @@ quantity threshold into a points threshold.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol, Self
 
 import numpy as np
 import numpy.typing as npt
+
+from warehouse.rules.model import DEFAULT_PARTITION_GROUP, RulePack
 
 Floats = npt.NDArray[np.float64]
 
@@ -120,3 +122,44 @@ class FromFunction(Fixed):
             else:
                 low = mid
         return float(high)
+
+
+@dataclass(frozen=True, slots=True)
+class RpSource:
+    """The leaf components an RP's points are summed from, and how its quantity is recovered from them."""
+
+    points_from: tuple[str, ...]
+    recovery: Recovery
+
+
+# Bonus RPs whose quantity is not the sum of leaves, keyed by season and rule-pack component.
+RP_SOURCES: dict[int, dict[str, RpSource]] = {
+    2025: {"goalRP": RpSource(("autoArtifactPoints", "teleopArtifactPoints"), Ratio())},
+    2026: {
+        "pollinator1RP": RpSource(("autoHivePoints", "teleopHivePoints"), FloorDivide(20)),
+        "pollinator2RP": RpSource(("autoHivePoints", "teleopHivePoints"), FloorDivide(20)),
+    },
+}
+
+
+def rp_sources(pack: RulePack, declared: Mapping[str, RpSource] | None = None) -> dict[str, RpSource]:
+    """Each bonus RP's source, checked against the pack's leaves."""
+    declared = RP_SOURCES.get(pack.season, {}) if declared is None else declared
+    leaves = {c.name for c in pack.components if c.partition_group == DEFAULT_PARTITION_GROUP}
+    bonuses = {bonus.component: bonus for bonus in pack.ranking.bonus_rp}
+    unknown = sorted(set(declared) - set(bonuses))
+    if unknown:
+        raise ValueError(f"{pack.season}: sources declared for {unknown}, which the pack has no bonus RP for")
+
+    sources: dict[str, RpSource] = {}
+    for component, bonus in bonuses.items():
+        source = declared.get(component)
+        if source is None:
+            not_leaves = sorted(set(bonus.sum_of) - leaves)
+            if not_leaves:
+                raise ValueError(f"{pack.season}: {component} sums {not_leaves}, not leaves, and declares no source")
+            source = RpSource(tuple(bonus.sum_of), Identity())
+        elif not_leaves := sorted(set(source.points_from) - leaves):
+            raise ValueError(f"{pack.season}: {component} takes points from {not_leaves}, which are not leaves")
+        sources[component] = source
+    return sources
