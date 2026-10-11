@@ -101,6 +101,18 @@ class CarriedEpaRow:
 
 
 @dataclass(frozen=True, slots=True)
+class PreMatchRatingRow:
+    """One qualification alliance-row with each rated team's rating components as they stood before the match."""
+
+    match_id: uuid.UUID
+    alliance: str
+    event_type: str | None
+    event_date_start: date | None
+    score_no_foul: float
+    components: tuple[dict[str, float], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class PreEventEpaRow:
     """Beta-zero: what a team carried into an event."""
 
@@ -347,6 +359,53 @@ class Warehouse:
             for row in rows:
                 out.setdefault(row.as_of_match, {})[row.team_number] = float(row.epa_scaled)
         return out
+
+    def pre_match_epa(self, fit_run_id: uuid.UUID, *, before: date | None = None) -> list[PreMatchRatingRow]:
+        """Every rated qualification alliance-row of one run's season, in event-sequential order.
+
+        A team's rating before a match is its latest ``pre_event`` or ``match`` row at that event with a lower
+        ``as_of_match``. ``before`` keeps events that started earlier. An alliance-row missing any rated team's rating
+        is left out.
+        """
+        sql = text(
+            f"""
+            SELECT m.match_id, m.alliance, m.event_type, m.event_date_start, m.score_no_foul,
+                   array_agg(r.components ORDER BY t.station) AS components,
+                   count(*) AS rated, max(m.rated_count) AS expected
+            FROM (
+                SELECT m.*, cardinality(array_positions(m.no_shows, false)) AS rated_count
+                FROM pub.v_match_rating_input m
+                JOIN pub.v_fit_run f ON f.fit_run_id = :run AND f.season = m.season
+                WHERE m.level = 'QUALIFICATION'
+                  AND (CAST(:before AS date) IS NULL OR m.event_date_start < CAST(:before AS date)){_RATABLE_ONLY}
+            ) m
+            JOIN pub.v_event_sequence s ON s.event_id = m.event_id
+            CROSS JOIN LATERAL unnest(m.team_numbers, m.no_shows) WITH ORDINALITY AS t(team_number, no_show, station)
+            CROSS JOIN LATERAL (
+                SELECT e.components FROM pub.v_team_epa e
+                WHERE e.fit_run_id = :run AND e.event_id = m.event_id AND e.team_number = t.team_number
+                  AND e.tag IN ('pre_event', 'match') AND e.as_of_match < m.event_match_ordinal
+                ORDER BY e.as_of_match DESC LIMIT 1
+            ) r
+            WHERE NOT t.no_show
+            GROUP BY s.event_ordinal, m.event_match_ordinal, m.match_id, m.alliance, m.event_type, m.event_date_start,
+                     m.score_no_foul
+            ORDER BY s.event_ordinal, m.event_match_ordinal, m.alliance
+            """
+        )
+        with self._engine.connect() as conn:
+            return [
+                PreMatchRatingRow(
+                    match_id=uuid.UUID(str(r.match_id)),
+                    alliance=r.alliance,
+                    event_type=r.event_type,
+                    event_date_start=r.event_date_start,
+                    score_no_foul=float(r.score_no_foul or 0.0),
+                    components=tuple(dict(c or {}) for c in r.components),
+                )
+                for r in conn.execute(sql, {"run": str(fit_run_id), "before": before})
+                if r.rated == r.expected
+            ]
 
     def batch_fit_run(
         self, model: str, season: int, model_version: str, *, prior_version: str | None = None
