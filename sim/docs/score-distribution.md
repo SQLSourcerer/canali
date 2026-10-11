@@ -83,4 +83,4 @@ The skewed-t model's difference from the logistic:
   - This model is the basis; the sim adds factors such as fouls to turn an "outscoring" model into a "win
     probability" model.
 - Refitting on the season itself: the sim refits every parameter weekly once a season has `INIT_WINDOW` rows. See the
-  score and RP model doc for that cadence and its measurements.
+  [score and RP model doc](score-and-rp-model.md) for that cadence and its measurements.
