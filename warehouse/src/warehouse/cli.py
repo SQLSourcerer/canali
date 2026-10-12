@@ -243,6 +243,20 @@ def ingest_alliances(
         _echo(_totals(season, ing.backfill_alliances(season, region_code=region_code, limit=limit)))
 
 
+@ingest_app.command("rankings")
+def ingest_rankings(
+    seasons: SEASONS = "2022,2023,2024,2025",
+    region_code: REGION = None,
+    limit: Annotated[int | None, typer.Option(help="Stop after N events per season")] = None,
+) -> None:
+    """Published qualification rankings from FTC Events, for events with a qualification match."""
+    from warehouse.ingest.pipeline import Ingestor
+
+    ing = Ingestor(make_engine())
+    for season in _seasons(seasons):
+        _echo(_totals(season, ing.backfill_rankings(season, region_code=region_code, limit=limit)))
+
+
 @ingest_app.command("sweep")
 def ingest_sweep() -> None:
     """The weekly sweep."""

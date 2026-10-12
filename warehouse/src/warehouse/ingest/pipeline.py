@@ -27,7 +27,7 @@ from warehouse.ingest.payloads import PayloadStore
 from warehouse.rules.model import Component
 from warehouse.rules.validate import validate_breakdown
 from warehouse.schema import core
-from warehouse.schema.types import ELIMINATION_MATCHES
+from warehouse.schema.types import ELIMINATION_MATCHES, QUALIFICATION_MATCHES
 
 log = structlog.get_logger(__name__)
 
@@ -414,6 +414,42 @@ class Ingestor:
                 log.warning("backfill.alliances_failed", event_code=code, error=str(exc))
 
         log.info("alliances.done", season=season, **totals)
+        return totals
+
+    def backfill_rankings(
+        self, season: int, *, region_code: str | None = None, limit: int | None = None
+    ) -> dict[str, int]:
+        """Published qualification rankings for a season, over events with a qualification match.
+
+        One call per event, resumable through its cursor."""
+        totals = {"events": 0, "rankings": 0, "empty": 0, "failed": 0}
+
+        with self.engine.connect() as conn:
+            query = select(core.event.c.code, core.event.c.event_id).where(
+                core.event.c.season == season,
+                core.event.c.event_id.in_(
+                    select(core.match.c.event_id).where(core.match.c.level.in_(QUALIFICATION_MATCHES)).distinct()
+                ),
+            )
+            if region_code:
+                query = query.where(core.event.c.region_code == region_code)
+            targets = conn.execute(query.order_by(core.event.c.date_start, core.event.c.code)).all()
+        if limit:
+            targets = targets[:limit]
+
+        for code, event_id in targets:
+            totals["events"] += 1
+            try:
+                with self.engine.begin() as conn:
+                    ranked = self._step_rankings(conn, season, code, uuid.UUID(str(event_id)))
+                totals["rankings"] += ranked.rows
+                if ranked.outcome == "empty":
+                    totals["empty"] += 1
+            except Exception as exc:
+                totals["failed"] += 1
+                log.warning("backfill.rankings_failed", event_code=code, error=str(exc))
+
+        log.info("rankings.done", season=season, **totals)
         return totals
 
     def backfill_scout_awards(self, season: int) -> dict[str, int]:
