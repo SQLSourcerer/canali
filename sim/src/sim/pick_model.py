@@ -13,6 +13,8 @@ Floats = npt.NDArray[np.float64]
 
 PICK_FEATURES = ("predictor_z", "rank_pct", "captain_x_rank", "partner", "allied_before", "same_city", "team_age")
 
+TEAM_AGE_CAP = 3.0
+
 
 @dataclass(frozen=True, slots=True)
 class PickModel:
@@ -76,7 +78,7 @@ class PickField:
                     float(t in partners),
                     float(t in allied),
                     float(city is not None and self.city.get(t) == city),
-                    self.team_age.get(t, 0.0),
+                    min(self.team_age.get(t, 0.0), TEAM_AGE_CAP),
                 ]
                 for t in candidates
             ],
