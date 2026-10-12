@@ -45,16 +45,44 @@ RP_STAND_INS: dict[int, dict[str, tuple[tuple[int, str], ...]]] = {
 MEASURED_SCORE_MODELS: dict[str, dict[int, ScoreModel]] = {
     "epa-0.10.0": {
         2022: ScoreModel(
-            intercept=0.0971, slope=0.8941, dispersion=10.220, dof=11.96, skew=1.2688, foul_variance=115.5, rows=43573
+            intercept=0.0971,
+            slope=0.8941,
+            dispersion=10.220,
+            dof=11.96,
+            skew=1.2688,
+            foul_mean=6.62,
+            foul_variance=115.5,
+            rows=43573,
         ),
         2023: ScoreModel(
-            intercept=-1.3348, slope=0.8793, dispersion=9.702, dof=15.15, skew=1.3652, foul_variance=156.4, rows=50204
+            intercept=-1.3348,
+            slope=0.8793,
+            dispersion=9.702,
+            dof=15.15,
+            skew=1.3652,
+            foul_mean=5.56,
+            foul_variance=156.4,
+            rows=50204,
         ),
         2024: ScoreModel(
-            intercept=-0.3838, slope=0.9522, dispersion=11.082, dof=10.14, skew=1.1977, foul_variance=101.5, rows=56660
+            intercept=-0.3838,
+            slope=0.9522,
+            dispersion=11.082,
+            dof=10.14,
+            skew=1.1977,
+            foul_mean=3.49,
+            foul_variance=101.5,
+            rows=56660,
         ),
         2025: ScoreModel(
-            intercept=-0.5347, slope=0.9657, dispersion=7.363, dof=9.886, skew=1.1449, foul_variance=198.0, rows=62181
+            intercept=-0.5347,
+            slope=0.9657,
+            dispersion=7.363,
+            dof=9.886,
+            skew=1.1449,
+            foul_mean=15.06,
+            foul_variance=198.0,
+            rows=62181,
         ),
     },
 }

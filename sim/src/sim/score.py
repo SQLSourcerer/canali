@@ -22,8 +22,11 @@ FIT_BOUNDS = ((-50.0, 50.0), (0.2, 3.0), (np.log(0.5), np.log(300.0)), (np.log(0
 _NODES, _WEIGHTS = np.polynomial.legendre.leggauss(32)
 QUANTILES, QUANTILE_WEIGHTS = (_NODES + 1.0) / 2.0, _WEIGHTS / 2.0
 
-# Bounds on the result noise's standard deviation, in points.
+# Bounds on the foul points' standard deviation, in points.
 FOUL_SD_BOUNDS = (0.0, 100.0)
+
+# Foul points come in multiples of this, and a draw below it is no foul at all.
+FOUL_STEP = 5.0
 FIT_CHUNK = 4096
 CLIP = 1e-9
 
@@ -33,8 +36,9 @@ class ScoreModel:
     """A skewed Student-t on an alliance's score, its variance proportional to the predicted score.
 
     ``score = intercept + slope * mu + sqrt(dispersion * mu) * e``, with ``e`` a Fernandez-Steel skewed t, rounded to
-    whole points and floored at zero. The two alliances of a match are drawn independently. The official result adds a
-    zero-mean normal of ``foul_variance`` to each alliance's score, standing in for foul points.
+    whole points and floored at zero. The two alliances of a match are drawn independently. The official score adds the
+    foul points each alliance receives, a gamma of mean ``foul_mean`` and variance ``foul_variance`` taken to the
+    nearest ``FOUL_STEP``, a draw below one step counting as none.
 
     Attributes:
         intercept: Points added to every alliance's location.
@@ -42,7 +46,8 @@ class ScoreModel:
         dispersion: Variance per predicted point.
         dof: Degrees of freedom of the t.
         skew: Ratio of the right tail's scale to the left's; 1 is symmetric.
-        foul_variance: Variance of the noise on each alliance's score that decides the official result.
+        foul_mean: Mean foul points an alliance receives.
+        foul_variance: Variance of the foul points an alliance receives, as fitted on official results.
         rows: Alliance-rows the model was fitted on.
         provisional: True when earlier seasons stand in.
     """
@@ -52,9 +57,17 @@ class ScoreModel:
     dispersion: float
     dof: float
     skew: float
+    foul_mean: float = 0.0
     foul_variance: float = 0.0
     rows: int = 0
     provisional: bool = False
+
+    def foul_points(self, shape: tuple[int, ...], rng: np.random.Generator) -> Floats:
+        """Foul points received by each alliance, in multiples of ``FOUL_STEP`` and never negative."""
+        if self.foul_mean <= 0.0 or self.foul_variance <= 0.0:
+            return np.zeros(shape)
+        drawn = rng.gamma(self.foul_mean**2 / self.foul_variance, self.foul_variance / self.foul_mean, shape)
+        return np.where(drawn < FOUL_STEP, 0.0, FOUL_STEP * np.rint(drawn / FOUL_STEP))
 
     def location(self, mu: Floats) -> Floats:
         return self.intercept + self.slope * np.asarray(mu, dtype=np.float64)
@@ -140,15 +153,16 @@ def fit_score_model(mu: Floats, score: Floats, *, start: ScoreModel | None = Non
 
 
 def fit_foul_variance(model: ScoreModel, mu: Floats, outcome: Floats) -> float:
-    """The result noise variance that minimizes log loss on official results.
+    """The foul points variance that minimizes log loss on official results, foul points taken as a normal.
 
-    ``mu`` is each match's predicted scores shaped ``(match, alliance)``, and ``outcome`` the first alliance's official
+    Only the two alliances' difference in foul points changes a result, so their mean cancels. ``mu`` is each match's
+    predicted scores shaped ``(match, alliance)``, and ``outcome`` the first alliance's official
     result: 1 for a win, a half for a tie, 0 for a loss.
     """
     mu = np.asarray(mu, dtype=np.float64)
     outcome = np.asarray(outcome, dtype=np.float64)
     if len(mu) == 0:
-        raise ValueError("no matches to fit the result noise on")
+        raise ValueError("no matches to fit the foul variance on")
     first = model.quantile(mu[:, :1], QUANTILES[None, :])
     second = model.quantile(mu[:, 1:], QUANTILES[None, :])
     weights = np.outer(QUANTILE_WEIGHTS, QUANTILE_WEIGHTS)
@@ -178,6 +192,7 @@ def provisional_score_model(previous: Sequence[ScoreModel]) -> ScoreModel:
         dispersion=fmean(m.dispersion for m in previous),
         dof=fmean(m.dof for m in previous),
         skew=fmean(m.skew for m in previous),
+        foul_mean=fmean(m.foul_mean for m in previous),
         foul_variance=fmean(m.foul_variance for m in previous),
         provisional=True,
     )
@@ -189,14 +204,20 @@ def resolve_score_model(
     *,
     match_mu: Floats,
     outcome: Floats,
+    foul_points: Floats,
     min_rows: int,
     previous: Sequence[ScoreModel],
 ) -> ScoreModel:
-    """The season's model and result noise from its rows so far, or the earlier seasons' until it has ``min_rows``.
+    """The season's model and foul points from its rows so far, or the earlier seasons' until it has ``min_rows``.
 
-    ``match_mu`` and ``outcome`` are the matches the result noise is fitted on, as ``fit_foul_variance`` takes them.
+    ``match_mu`` and ``outcome`` are the matches the foul variance is fitted on, as ``fit_foul_variance`` takes them,
+    and ``foul_points`` each row's foul points received.
     """
     if len(mu) < min_rows:
         return provisional_score_model(previous)
     model = fit_score_model(mu, score, start=provisional_score_model(previous) if previous else None)
-    return replace(model, foul_variance=fit_foul_variance(model, match_mu, outcome))
+    return replace(
+        model,
+        foul_mean=float(np.mean(foul_points)),
+        foul_variance=fit_foul_variance(model, match_mu, outcome),
+    )

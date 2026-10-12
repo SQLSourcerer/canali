@@ -149,7 +149,7 @@ def _correlated(
 
 
 def resolve_models(rows: SeasonRows, pack: RulePack, version: str) -> SeasonModels:
-    """The score model, result noise and every bonus RP curve and correlation from these rows, or below
+    """The score model, foul points and every bonus RP curve and correlation from these rows, or below
     ``INIT_WINDOW`` rows their stand-ins measured on the predictor at ``version``"""
     mu = rows.predicted_sum()
     pairs, outcome = rows.matches()
@@ -158,6 +158,7 @@ def resolve_models(rows: SeasonRows, pack: RulePack, version: str) -> SeasonMode
         rows.score,
         match_mu=mu[pairs],
         outcome=outcome,
+        foul_points=rows.official - rows.score,
         min_rows=INIT_WINDOW,
         previous=[model for s, model in MEASURED_SCORE_MODELS.get(version, {}).items() if s < pack.season],
     )

@@ -2,7 +2,7 @@
 
 Each alliance takes one latent normal draw. Its no-foul score is the score model's quantile there, each bonus RP is
 linked to it by the RP curve's correlation, and the tiebreakers are fixed shares of the no-foul score. The official
-result adds the score model's zero-mean result noise to each alliance. The two alliances are drawn independently.
+score adds the foul points each alliance receives, from the score model. The two alliances are drawn independently.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class SeasonModels:
     """What a season's sim plays its matches with.
 
     Attributes:
-        score: The no-foul score and the result noise.
+        score: The no-foul score and the foul points.
         rp_curves: Each bonus RP's curve, keyed by rule-pack component.
         tiebreaker_shares: Each tiebreaker component as a share of the no-foul score, keyed by rule-pack name.
     """
@@ -52,7 +52,7 @@ def draw_matches(
     total = np.sum([np.asarray(p, dtype=np.float64) for p in predicted.values()], axis=0)
     latent = rng.standard_normal(total.shape)
     no_foul = models.score.whole_points(models.score.quantile(total, ndtr(latent))).astype(np.float64)
-    noise = np.rint(rng.normal(0.0, np.sqrt(models.score.foul_variance), total.shape))
+    fouls = models.score.foul_points(total.shape, rng)
 
     sources = rp_sources(pack)
     probabilities = {}
@@ -74,7 +74,7 @@ def draw_matches(
     )
 
     return MatchResults(
-        score=no_foul + noise,
+        score=no_foul + fouls,
         bonus=earned,
         components={name: share * no_foul for name, share in models.tiebreaker_shares.items()},
     )
