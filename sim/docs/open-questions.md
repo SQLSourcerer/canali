@@ -18,3 +18,11 @@ The score model draws every match independently with one spread per season. Earl
 ## Declines
 
 Every simulated invitation is accepted. Future work could base declines off of simulated win probability against some "standard playoff alliance" as calculated by event predictor_z.
+
+## How many award places an event gives
+
+The sim gives Inspire places by field size: 1st only up to 10 teams, 1st and 2nd from 11 to 20, and 1st to 3rd from 21.
+No other award gives a 2nd or 3rd place. That fits Pennsylvania's recent events, but regions differ and change over
+time: Pennsylvania gave two Inspire places at every 2024 event regardless of size, Australia's championship gives 2nd
+places in every award, and some regions give a Think 2nd at larger qualifiers. Regions also break their own rule now
+and then. A simulation that generalizes beyond Pennsylvania would need to draw the number of places with uncertainty.
