@@ -13,8 +13,8 @@ component, as they stood before the match. `EpaPredictor` reads them from an EPA
 ### Score
 
 `ScoreModel` (`sim/score.py`) is the [skewed-t model](score-distribution.md), on the alliance's predicted total.
-It also carries `foul_variance`, the variance of a zero-mean normal added to each alliance's no-foul score to decide
-the official result;
+It also carries `foul_mean` and `foul_variance`, the gamma that each alliance's foul points are drawn from to get its
+official score, as the [fouls doc](fouls.md) describes.
 
 ### Bonus RPs
 
@@ -24,8 +24,8 @@ shift. Its spread widens or narrows exponentially as the predicted points go up.
 that curve above the threshold, with the threshold lowered by half a point. That probability is then capped at the
 earned rate of the highest probability bucket with enough rows.
 
-An RP based on a count is estimated by a proxy from points. Its source (`sim/rp_source.py`) names the leaf components its points come
-from and a recovery from points to the counted quantity:
+An RP based on a count is estimated by a proxy from points. Its source (`sim/rp_source.py`) names the leaf components
+its points come from and a recovery from points to the counted quantity:
 
 | Recovery | Quantity from points `P` | Fitted | Used by |
 | --- | --- | --- | --- |
@@ -48,7 +48,7 @@ Each curve also carries `correlation`, how closely earning the RP follows the al
   probability, so each RP keeps its curve's rate and moves with the score. RPs on one source share the noise.
 - Each tiebreaker component is a fixed share of the no-foul score: the season's total of that component over its total
   no-foul score.
-- The official score adds the "foul" noise, and decides win, tie and loss.
+- The official score adds the alliance's drawn foul points, and decides win, tie and loss.
 - The two alliances are drawn independently.
 
 ## Fitting and cadence
@@ -57,7 +57,7 @@ Each curve also carries `correlation`, how closely earning the RP follows the al
 
 | Below `INIT_WINDOW` rows | From `INIT_WINDOW` rows |
 | --- | --- |
-| Score model and result noise: earlier seasons' measured models averaged | Refit in full on only this season so far |
+| Score model and foul points: earlier seasons' measured models averaged | Refit in full on only this season so far |
 | RP curves and correlations: the stand-ins in `RP_STAND_INS`, averaged | Refit in full on only this season so far |
 
 The measured constants are whole-season fits in `MEASURED_SCORE_MODELS` and `MEASURED_RP_CURVES` in
