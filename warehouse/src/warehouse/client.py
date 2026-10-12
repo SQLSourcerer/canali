@@ -63,6 +63,24 @@ class MatchRow:
 
 
 @dataclass(frozen=True, slots=True)
+class AlliancePickRow:
+    """One step of an event's alliance selection."""
+
+    event_id: uuid.UUID
+    pick_ordinal: int
+    alliance_number: int | None
+    team_number: int
+    action: str
+
+
+@dataclass(frozen=True, slots=True)
+class TeamSeasonRow:
+    team_number: int
+    rookie_year: int | None
+    city: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class OprRow:
     event_id: uuid.UUID
     season: int
@@ -233,6 +251,49 @@ class Warehouse:
         )
         with self._engine.connect() as conn:
             return [_match_row(r) for r in conn.execute(sql, {"season": season, "levels": list(levels)}).mappings()]
+
+    def alliance_picks(self, season: int) -> list[AlliancePickRow]:
+        """A season's alliance selections, each event's in the order it happened."""
+        sql = text(
+            """
+            SELECT event_id, pick_ordinal, alliance_number, team_number, action
+            FROM pub.v_alliance_pick
+            WHERE season = :season
+            ORDER BY event_id, pick_ordinal
+            """
+        )
+        with self._engine.connect() as conn:
+            return [
+                AlliancePickRow(
+                    uuid.UUID(str(r.event_id)), r.pick_ordinal, r.alliance_number, r.team_number, str(r.action)
+                )
+                for r in conn.execute(sql, {"season": season})
+            ]
+
+    def ranks(self, season: int) -> dict[uuid.UUID, dict[int, int]]:
+        """Each event's published qualification rank per team, first place 1."""
+        sql = text("SELECT event_id, team_number, rank FROM pub.v_ranking WHERE season = :season")
+        out: dict[uuid.UUID, dict[int, int]] = {}
+        with self._engine.connect() as conn:
+            for r in conn.execute(sql, {"season": season}):
+                out.setdefault(uuid.UUID(str(r.event_id)), {})[r.team_number] = r.rank
+        return out
+
+    def team_seasons(self, season: int) -> dict[int, TeamSeasonRow]:
+        """Each team registered in a season, with its rookie year and the city it gives."""
+        sql = text(
+            """
+            SELECT s.team_number, t.rookie_year, s.from_city AS city
+            FROM pub.v_team_season s
+            JOIN pub.v_team t ON t.team_number = s.team_number
+            WHERE s.season = :season
+            """
+        )
+        with self._engine.connect() as conn:
+            return {
+                r.team_number: TeamSeasonRow(r.team_number, r.rookie_year, r.city)
+                for r in conn.execute(sql, {"season": season})
+            }
 
     def opr(self, season: int) -> list[OprRow]:
         """The OPR baseline both models are measured against."""
@@ -408,6 +469,36 @@ class Warehouse:
                 for r in conn.execute(sql, {"run": str(fit_run_id), "before": before})
                 if r.rated == r.expected
             ]
+
+    def qualification_end_epa(
+        self, fit_run_id: uuid.UUID, *, before: date | None = None
+    ) -> dict[tuple[uuid.UUID, int], float]:
+        """Each team's rating after its event's last rated qualification match, keyed by event and team.
+
+        ``before`` keeps events that started earlier.
+        """
+        sql = text(
+            f"""
+            WITH last AS (
+                SELECT m.event_id, max(m.event_match_ordinal) AS ordinal
+                FROM pub.v_match_rating_input m
+                JOIN pub.v_fit_run f ON f.fit_run_id = :run AND f.season = m.season
+                WHERE m.level = 'QUALIFICATION'
+                  AND (CAST(:before AS date) IS NULL OR m.event_date_start < CAST(:before AS date)){_RATABLE_ONLY}
+                GROUP BY m.event_id
+            )
+            SELECT DISTINCT ON (e.event_id, e.team_number) e.event_id, e.team_number, e.epa_scaled
+            FROM pub.v_team_epa e
+            JOIN last ON last.event_id = e.event_id
+            WHERE e.fit_run_id = :run AND e.tag IN ('pre_event', 'match') AND e.as_of_match <= last.ordinal
+            ORDER BY e.event_id, e.team_number, e.as_of_match DESC
+            """
+        )
+        with self._engine.connect() as conn:
+            return {
+                (uuid.UUID(str(r.event_id)), r.team_number): float(r.epa_scaled)
+                for r in conn.execute(sql, {"run": str(fit_run_id), "before": before})
+            }
 
     def batch_fit_run(
         self, model: str, season: int, model_version: str, *, prior_version: str | None = None

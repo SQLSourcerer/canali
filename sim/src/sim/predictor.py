@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
@@ -24,6 +25,12 @@ class Predictor(Protocol):
         """Every qualification alliance-row of events that started before ``before``, empty if none is rated yet."""
         ...
 
+    def qualification_end(
+        self, warehouse: Warehouse, season: int, *, before: date | None
+    ) -> dict[tuple[uuid.UUID, int], float]:
+        """Each team's predicted points once its event's qualification is over, keyed by event and team."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class EpaPredictor:
@@ -36,7 +43,16 @@ class EpaPredictor:
         return self.epa_version
 
     def pre_match(self, warehouse: Warehouse, season: int, *, before: date | None) -> list[PreMatchRatingRow]:
+        run = self._run(warehouse, season)
+        return [] if run is None else warehouse.pre_match_epa(run, before=before)
+
+    def qualification_end(
+        self, warehouse: Warehouse, season: int, *, before: date | None
+    ) -> dict[tuple[uuid.UUID, int], float]:
+        run = self._run(warehouse, season)
+        return {} if run is None else warehouse.qualification_end_epa(run, before=before)
+
+    def _run(self, warehouse: Warehouse, season: int) -> uuid.UUID | None:
         if self.epa_version not in warehouse.model_versions(EPA_MODEL):
             raise ValueError(f"no completed {EPA_MODEL} run at version {self.epa_version}")
-        run = warehouse.batch_fit_run(EPA_MODEL, season, self.epa_version)
-        return [] if run is None else warehouse.pre_match_epa(run, before=before)
+        return warehouse.batch_fit_run(EPA_MODEL, season, self.epa_version)
