@@ -15,7 +15,7 @@ from datetime import date
 import numpy as np
 import numpy.typing as npt
 
-from sim.pick_model import PICK_FEATURES, PickModel, fit_coefficients
+from sim.pick_model import PICK_FEATURES, PickField, PickModel, fit_coefficients
 from sim.predictor import Predictor
 from warehouse.client import AlliancePickRow, EventRow, MatchRow, TeamSeasonRow, Warehouse
 from warehouse.tier import tier_for
@@ -129,21 +129,18 @@ def _event_decisions(
 ) -> list[PickDecision]:
     """The event's picks, or none when its ranks do not reproduce its captains."""
     field = sorted(rank, key=rank.__getitem__)
-    n = len(field)
-    rating = np.array([ratings[(event.event_id, t)] for t in field])
-    predictor_z = dict(zip(field, (rating - rating.mean()) / (rating.std() or 1.0), strict=True))
-    rank_pct = {t: 1.0 - (r - 1) / max(n - 1, 1) for t, r in rank.items()}
     partners: dict[int, set[int]] = defaultdict(set)
     for m in matches:
         for t in m.team_numbers:
             partners[t] |= set(m.team_numbers) - {t}
-
-    def city(t: int) -> str | None:
-        return teams[t].city if t in teams else None
-
-    def age(t: int) -> float:
-        rookie = teams[t].rookie_year if t in teams else None
-        return float(season - rookie) if rookie is not None else 0.0
+    pick_field = PickField(
+        teams=tuple(field),
+        rating=np.array([ratings[(event.event_id, t)] for t in field]),
+        partners={t: frozenset(p) for t, p in partners.items()},
+        allied={t: frozenset(a) for t, a in allied.items()},
+        city={t: teams[t].city for t in field if t in teams},
+        team_age={t: float(season - r) for t in field if t in teams and (r := teams[t].rookie_year) is not None},
+    )
 
     captains: list[int] = []
     captain_of: dict[int, int] = {}
@@ -172,21 +169,9 @@ def _event_decisions(
                     found.append((captain, pool, p.team_number))
             taken.add(p.team_number)
 
-    decisions = []
-    for captain, pool, chosen in found:
-        features = np.array(
-            [
-                [
-                    predictor_z[t],
-                    rank_pct[t],
-                    rank_pct[captain] * rank_pct[t],
-                    float(t in partners[captain]),
-                    float(t in allied[captain]),
-                    float(city(t) is not None and city(t) == city(captain)),
-                    age(t),
-                ]
-                for t in pool
-            ]
+    return [
+        PickDecision(
+            event.event_id, event_start, captain, tuple(pool), pool.index(chosen), pick_field.features(captain, pool)
         )
-        decisions.append(PickDecision(event.event_id, event_start, captain, tuple(pool), pool.index(chosen), features))
-    return decisions
+        for captain, pool, chosen in found
+    ]
