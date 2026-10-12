@@ -61,7 +61,11 @@ def pick_decisions(
     ranks = warehouse.ranks(season)
     ratings = predictor.qualification_end(warehouse, season, before=before)
     teams = warehouse.team_seasons(season)
-    history = [(start, _alliances(picks[e.event_id])) for e, start in events if picks.get(e.event_id)]
+    history = [
+        (start, _alliances(picks[e.event_id]))
+        for e, start in events
+        if tier_for(e.event_type) is not None and picks.get(e.event_id)
+    ]
 
     decisions: list[PickDecision] = []
     for event, event_start in events:
@@ -122,7 +126,7 @@ def _event_decisions(
     *,
     rank: dict[int, int],
     matches: Sequence[MatchRow],
-    ratings: dict[tuple[uuid.UUID, int], float],
+    ratings: dict[tuple[uuid.UUID, int], dict[str, float]],
     teams: dict[int, TeamSeasonRow],
     allied: dict[int, set[int]],
     season: int,
@@ -135,7 +139,7 @@ def _event_decisions(
             partners[t] |= set(m.team_numbers) - {t}
     pick_field = PickField(
         teams=tuple(field),
-        rating=np.array([ratings[(event.event_id, t)] for t in field]),
+        rating=np.array([sum(ratings[(event.event_id, t)].values()) for t in field]),
         partners={t: frozenset(p) for t, p in partners.items()},
         allied={t: frozenset(a) for t, a in allied.items()},
         city={t: teams[t].city for t in field if t in teams},

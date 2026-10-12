@@ -26,3 +26,7 @@ No other award gives a 2nd or 3rd place. That fits Pennsylvania's recent events,
 time: Pennsylvania gave two Inspire places at every 2024 event regardless of size, Australia's championship gives 2nd
 places in every award, and some regions give a Think 2nd at larger qualifiers. Regions also break their own rule now
 and then. A simulation that generalizes beyond Pennsylvania would need to draw the number of places with uncertainty.
+
+## Events with divisions
+
+The sim predicts single-division events only. Awards are not set up for divisions and require additional investigation.

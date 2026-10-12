@@ -81,6 +81,26 @@ class TeamSeasonRow:
 
 
 @dataclass(frozen=True, slots=True)
+class AwardRow:
+    """A judged award."""
+
+    event_id: uuid.UUID
+    award_code: int
+    place: int
+    team_number: int
+
+
+@dataclass(frozen=True, slots=True)
+class AllianceSlotRow:
+    """A team on a playoff alliance: captain, round1 or round2."""
+
+    event_id: uuid.UUID
+    seed: int
+    team_number: int
+    role: str
+
+
+@dataclass(frozen=True, slots=True)
 class OprRow:
     event_id: uuid.UUID
     season: int
@@ -279,6 +299,24 @@ class Warehouse:
                 out.setdefault(uuid.UUID(str(r.event_id)), {})[r.team_number] = r.rank
         return out
 
+    def awards(self, season: int) -> list[AwardRow]:
+        """A season's judged award placings."""
+        sql = text("SELECT event_id, award_code, series AS place, team_number FROM pub.v_award WHERE season = :season")
+        with self._engine.connect() as conn:
+            return [
+                AwardRow(uuid.UUID(str(r.event_id)), r.award_code, r.place, r.team_number)
+                for r in conn.execute(sql, {"season": season})
+            ]
+
+    def alliances(self, season: int) -> list[AllianceSlotRow]:
+        """A season's seated playoff alliances, one row per team."""
+        sql = text("SELECT event_id, seed, team_number, role FROM pub.v_alliance_selection WHERE season = :season")
+        with self._engine.connect() as conn:
+            return [
+                AllianceSlotRow(uuid.UUID(str(r.event_id)), r.seed, r.team_number, r.role)
+                for r in conn.execute(sql, {"season": season})
+            ]
+
     def team_seasons(self, season: int) -> dict[int, TeamSeasonRow]:
         """Each team registered in a season, with its rookie year and the city it gives."""
         sql = text(
@@ -472,8 +510,8 @@ class Warehouse:
 
     def qualification_end_epa(
         self, fit_run_id: uuid.UUID, *, before: date | None = None
-    ) -> dict[tuple[uuid.UUID, int], float]:
-        """Each team's rating after its event's last rated qualification match, keyed by event and team.
+    ) -> dict[tuple[uuid.UUID, int], dict[str, float]]:
+        """Each team's rating components after its event's last rated qualification match, keyed by event and team.
 
         ``before`` keeps events that started earlier.
         """
@@ -487,7 +525,7 @@ class Warehouse:
                   AND (CAST(:before AS date) IS NULL OR m.event_date_start < CAST(:before AS date)){_RATABLE_ONLY}
                 GROUP BY m.event_id
             )
-            SELECT DISTINCT ON (e.event_id, e.team_number) e.event_id, e.team_number, e.epa_scaled
+            SELECT DISTINCT ON (e.event_id, e.team_number) e.event_id, e.team_number, e.components
             FROM pub.v_team_epa e
             JOIN last ON last.event_id = e.event_id
             WHERE e.fit_run_id = :run AND e.tag IN ('pre_event', 'match') AND e.as_of_match <= last.ordinal
@@ -496,7 +534,7 @@ class Warehouse:
         )
         with self._engine.connect() as conn:
             return {
-                (uuid.UUID(str(r.event_id)), r.team_number): float(r.epa_scaled)
+                (uuid.UUID(str(r.event_id)), r.team_number): dict(r.components or {})
                 for r in conn.execute(sql, {"run": str(fit_run_id), "before": before})
             }
 

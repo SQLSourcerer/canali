@@ -90,7 +90,7 @@ MEASURED_SCORE_MODELS: dict[str, dict[int, ScoreModel]] = {
 
 MEASURED_PICK_MODELS: dict[str, PickModel] = {
     "epa-0.10.0": PickModel(
-        coefficients=(1.448, 12.54, -10.39, 0.5321, 1.267, 0.7639, 0.1132),
+        coefficients=(1.449, 12.53, -10.38, 0.5326, 1.279, 0.7664, 0.1129),
         decisions=8287,
         seasons=(2022, 2023, 2024, 2025),
     ),

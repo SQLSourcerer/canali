@@ -27,8 +27,8 @@ class Predictor(Protocol):
 
     def qualification_end(
         self, warehouse: Warehouse, season: int, *, before: date | None
-    ) -> dict[tuple[uuid.UUID, int], float]:
-        """Each team's predicted points once its event's qualification is over, keyed by event and team."""
+    ) -> dict[tuple[uuid.UUID, int], dict[str, float]]:
+        """Each team's predicted points per component after its event's qualification, keyed by event and team."""
         ...
 
 
@@ -48,7 +48,7 @@ class EpaPredictor:
 
     def qualification_end(
         self, warehouse: Warehouse, season: int, *, before: date | None
-    ) -> dict[tuple[uuid.UUID, int], float]:
+    ) -> dict[tuple[uuid.UUID, int], dict[str, float]]:
         run = self._run(warehouse, season)
         return {} if run is None else warehouse.qualification_end_epa(run, before=before)
 
