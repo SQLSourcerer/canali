@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from sim.pick_model import PickModel
 from sim.rp_probability import RpCurve
 from sim.rp_source import Ratio
 from sim.score import ScoreModel
@@ -85,4 +86,12 @@ MEASURED_SCORE_MODELS: dict[str, dict[int, ScoreModel]] = {
             rows=62181,
         ),
     },
+}
+
+MEASURED_PICK_MODELS: dict[str, PickModel] = {
+    "epa-0.10.0": PickModel(
+        coefficients=(1.451, 12.52, -10.37, 0.5304, 1.27, 0.7666, 0.02114),
+        decisions=8287,
+        seasons=(2022, 2023, 2024, 2025),
+    ),
 }

@@ -15,13 +15,14 @@ from datetime import date
 import numpy as np
 import numpy.typing as npt
 
+from sim.pick_model import PICK_FEATURES, PickModel, fit_coefficients
 from sim.predictor import Predictor
 from warehouse.client import AlliancePickRow, EventRow, MatchRow, TeamSeasonRow, Warehouse
 from warehouse.tier import tier_for
 
 Floats = npt.NDArray[np.float64]
 
-PICK_FEATURES = ("predictor_z", "rank_pct", "captain_x_rank", "partner", "allied_before", "same_city", "team_age")
+TWO_TEAM_ALLIANCES_FROM = 2024
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +35,7 @@ class PickDecision:
         captain: The picking captain.
         candidates: Teams the captain could pick.
         chosen: Index of the picked team in ``candidates``.
-        features: Each candidate's values in ``PICK_FEATURES`` order, shaped ``(candidate, feature)``.
+        features: Each candidate's values in ``pick_model.PICK_FEATURES`` order, shaped ``(candidate, feature)``.
     """
 
     event_id: uuid.UUID
@@ -48,7 +49,7 @@ class PickDecision:
 def pick_decisions(
     warehouse: Warehouse, season: int, predictor: Predictor, *, before: date | None
 ) -> list[PickDecision]:
-    """Every pick at rated events that started before ``before``, or the whole season when None."""
+    """Every first pick at rated events that started before ``before``, or the whole season when None."""
     events = [
         (e, e.date_start)
         for e in warehouse.events(season)
@@ -88,6 +89,22 @@ def pick_decisions(
             season=season,
         )
     return decisions
+
+
+def measure_pick_model(warehouse: Warehouse, seasons: Sequence[int], predictor: Predictor) -> PickModel:
+    """The pick model fitted on every first pick of ``seasons`` pooled."""
+    allied = PICK_FEATURES.index("allied_before")
+    features: list[Floats] = []
+    chosen: list[int] = []
+    for season in seasons:
+        for d in pick_decisions(warehouse, season, predictor, before=None):
+            early = d.features[:, allied] * (season < TWO_TEAM_ALLIANCES_FROM)
+            later = d.features.copy()
+            later[:, allied] -= early
+            features.append(np.column_stack([later, early]))
+            chosen.append(d.chosen)
+    coefficients = fit_coefficients(features, chosen)[: len(PICK_FEATURES)]
+    return PickModel(tuple(float(c) for c in coefficients), decisions=len(chosen), seasons=tuple(sorted(seasons)))
 
 
 def _alliances(picks: Sequence[AlliancePickRow]) -> list[set[int]]:
@@ -132,6 +149,7 @@ def _event_decisions(
     captain_of: dict[int, int] = {}
     taken: set[int] = set()
     declined: set[int] = set()
+    has_picked: set[int] = set()
     found: list[tuple[int, list[int], int]] = []
     for p in picks:
         if p.action == "REMOVE":
@@ -148,8 +166,10 @@ def _event_decisions(
         elif p.action == "ACCEPT":
             captain = captain_of.get(p.alliance_number) if p.alliance_number is not None else None
             pool = [t for t in field if t not in taken and t not in declined and t not in captains]
-            if captain is not None and p.team_number in pool and len(pool) > 1:
-                found.append((captain, pool, p.team_number))
+            if captain is not None and captain not in has_picked:
+                has_picked.add(captain)
+                if p.team_number in pool and len(pool) > 1:
+                    found.append((captain, pool, p.team_number))
             taken.add(p.team_number)
 
     decisions = []
