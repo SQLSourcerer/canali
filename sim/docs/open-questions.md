@@ -15,3 +15,6 @@ Every RP oddsmaking is currently routed through a metric's predicted points. Mor
 ## Rating uncertainty that shrinks through an event
 
 The score model draws every match independently with one spread per season. Early predictions are less certain because the ratings have seen few of the event's matches, can we take advantage of that for better predictions?
+## Declines
+
+Every simulated invitation is accepted. Future work could base declines off of simulated win probability against some "standard playoff alliance" as calculated by event predictor_z.
