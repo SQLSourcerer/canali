@@ -51,7 +51,7 @@ def test_a_pack_that_declares_nothing_optional_takes_the_defaults() -> None:
     pack = RulePack.model_validate({"season": 1, "game": "X", "components": [{"name": "widgets", "kind": "numeric"}]})
     assert pack.ranking.rp_win is None
     assert pack.ranking.tiebreakers == []
-    assert (pack.structure.alliance_size, pack.structure.playoff_implemented) == (2, False)
+    assert pack.structure.playoff_implemented is False
     assert pack.components[0].partition_group is None
     assert pack.components[0].recovered_from == []
 

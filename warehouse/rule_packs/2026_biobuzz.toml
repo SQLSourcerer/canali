@@ -40,7 +40,6 @@ sum_of = ["hiveTips"]
 thresholds = { REG = 7, RCMP = 8, CMP = 13 }
 
 [structure]
-alliance_size = 2
 playoff_structure = "double_elimination_scaled"
 playoff_implemented = true
 advancement_implemented = true

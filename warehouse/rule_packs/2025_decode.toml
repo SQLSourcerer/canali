@@ -43,7 +43,6 @@ sum_of = ["autoPatternPoints", "teleopPatternPoints"]
 thresholds = { REG = 18, RCMP = 22, CMP = 22 }
 
 [structure]
-alliance_size = 2
 playoff_structure = "double_elimination_scaled"
 playoff_implemented = true
 advancement_implemented = true

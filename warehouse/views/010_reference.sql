@@ -41,7 +41,7 @@ FROM core.team_season ts;
 CREATE VIEW pub.v_rule_pack AS
 SELECT
     season, game, version, rp_win, rp_tie, rp_loss, has_bonus_rp,
-    alliance_size, ranking_formula, tiebreakers,
+    ranking_formula, tiebreakers,
     playoff_structure, alliance_brackets, playoff_implemented,
     advancement_implemented
 FROM core.rule_pack;

@@ -13,7 +13,6 @@ formula = "average_rp"
 tiebreakers = ["tbp1", "tbp2"]
 
 [structure]
-alliance_size = 2
 playoff_structure = "double_elimination_4_alliance"
 playoff_implemented = true
 advancement_implemented = true

@@ -135,11 +135,10 @@ class AllianceBracket(BaseModel):
 
 
 class Structure(BaseModel):
-    """How a season runs an event: alliance size and playoff format."""
+    """How a season runs an event's playoff."""
 
     model_config = ConfigDict(extra="forbid")
 
-    alliance_size: int = 2
     playoff_structure: str | None = None
     playoff_implemented: bool = False
     advancement_implemented: bool = False

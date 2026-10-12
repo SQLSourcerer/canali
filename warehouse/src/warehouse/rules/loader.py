@@ -70,7 +70,6 @@ def load(conn: Connection, packs: Iterable[RulePack]) -> dict[int, int]:
             rp_loss=pack.ranking.rp_loss,
             has_bonus_rp=pack.ranking.has_bonus_rp,
             bonus_rp=[b.model_dump(mode="json") for b in pack.ranking.bonus_rp] or None,
-            alliance_size=pack.structure.alliance_size,
             ranking_formula=pack.ranking.formula,
             tiebreakers=pack.ranking.tiebreakers or None,
             playoff_structure=pack.structure.playoff_structure,
