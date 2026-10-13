@@ -11,6 +11,7 @@ from sim.constants import MEASURED_AWARD_MODELS, MEASURED_PICK_MODELS
 from sim.event import EventField, EventModels, Slots
 from sim.fit import refit_cutoff, season_models
 from sim.predictor import Predictor
+from sim.rosters import RosterEvent
 from warehouse.client import EventRow, Warehouse
 from warehouse.tier import EventTier, tier_for
 
@@ -62,15 +63,24 @@ def event_field(
     )
 
 
-def event_slots(warehouse: Warehouse, event: EventRow) -> Slots | None:
-    """The slots the event offers, passing over teams already given one, or None when it offers none."""
+def event_slots(warehouse: Warehouse, event: EventRow, roster: RosterEvent | None = None) -> Slots | None:
+    """The slots the event offers, passing over teams already given one, or None when it offers none.
+
+    Published counts come first; before an event's are published, ``roster``'s stand in.
+    """
     advancement = warehouse.event_advancement(event.season).get(event.event_id)
-    if advancement is None or advancement.slots == 0:
+    if advancement is not None:
+        count, first = advancement.slots, advancement.slots_first_championship
+    elif roster is not None and roster.slots is not None:
+        count, first = roster.slots, roster.first_championship_slots or 0
+    else:
+        return None
+    if count == 0:
         return None
     return Slots(
-        advancement.slots,
+        count,
         warehouse.advanced_before(event.event_id),
-        advancement.slots_first_championship if tier_for(event.event_type) is EventTier.RCMP else None,
+        first if tier_for(event.event_type) is EventTier.RCMP else None,
     )
 
 

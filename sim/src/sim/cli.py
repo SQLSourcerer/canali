@@ -76,7 +76,8 @@ def event(
         else:
             field_teams = sorted({int(t) for t in np.unique(published.schedule.stations)})
         field = event_field(warehouse, row, field_teams, published.ratings)
-        slots = event_slots(warehouse, row)
+        roster = None if rosters is None else Rosters.from_file(rosters).events.get(event_code)
+        slots = event_slots(warehouse, row, roster)
         models = event_models(warehouse, row, chosen)
 
         draw = (
@@ -100,9 +101,10 @@ def _unscheduled_field(season: int, event_code: str, teams: str | None, rosters:
         return [int(t) for t in teams.split(",") if t.strip()]
     assert rosters is not None
     sample = Rosters.from_file(rosters)
-    if sample.season != season or event_code not in sample.events:
+    event = sample.events.get(event_code)
+    if sample.season != season or event is None or event.teams is None:
         raise typer.BadParameter(f"{rosters} has no {season} roster for {event_code}", param_hint="--rosters")
-    return sample.events[event_code]
+    return event.teams
 
 
 def _report(event_code: str, as_of_match: int, summary: EventSummary) -> None:
