@@ -98,7 +98,7 @@ def load_season(warehouse: Warehouse, season: int, *, strict: bool = False, grou
                 rows.append(((match.event_code, match.event_match_ordinal, alliance), side.score_no_foul, values))
     report = assert_partition(partition, rows)
 
-    if not (report.ok or partition.is_total_only):
+    if report.rows and not (report.ok or partition.is_total_only):
         isolated = report.rate > ISOLATED_FAILURE_RATE
         if strict or not isolated:
             raise ValueError(

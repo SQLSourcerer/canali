@@ -16,9 +16,8 @@ EPA_MODEL = "epa"
 class Entry(Protocol):
     """Each team's rating as the season so far leaves it."""
 
-    def entering(self, team: int, event_date: date, *, last_played: date | None = None) -> dict[str, float]:
-        """The team's predicted points per component at an event on ``event_date``, after its last event on
-        ``last_played``, or its last real one when None."""
+    def entering(self, team: int, event_date: date, *, first_event: date | None = None) -> dict[str, float]:
+        """The team's predicted points per component at an event on ``event_date``."""
         ...
 
 
@@ -58,15 +57,16 @@ class Predictor(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class EpaEntry:
-    """EPA's ratings entering an event: a team's latest rating, boosted for the days since it last competed."""
+    """EPA's ratings entering an event: a team's latest rating, boosted for the days since its last real event, or
+    since its first simulated one before it has played."""
 
     series: dict[int, dict[str, float]]
     last_played: dict[int, date]
     boost_per_day: float
     cap_days: float
 
-    def entering(self, team: int, event_date: date, *, last_played: date | None = None) -> dict[str, float]:
-        previous = last_played or self.last_played.get(team)
+    def entering(self, team: int, event_date: date, *, first_event: date | None = None) -> dict[str, float]:
+        previous = self.last_played.get(team, first_event)
         series = self.series[team]
         days = 0 if previous is None else (event_date - previous).days
         points = self.boost_per_day * min(max(days, 0), self.cap_days)
