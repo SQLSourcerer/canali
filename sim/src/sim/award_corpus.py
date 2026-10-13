@@ -211,13 +211,14 @@ def _event_decisions(
             t
             for t in field.teams
             if not first[t] - {award}
-            and not (award == INSPIRE and stage is EventTier.REGULAR and t in inspire_won_before)
             and not (award != INSPIRE and season >= INSPIRE_EXCLUSIVE_FROM and t in inspire_placed)
         ]
         last_place = max(places[award]) if award == INSPIRE else 1
         for place in range(1, last_place + 1):
+            locked = inspire_won_before if award == INSPIRE and stage is EventTier.REGULAR and place == 1 else set()
+            eligible = [t for t in pool if t not in locked]
             chosen = places[award].get(place)
-            if chosen is None or chosen not in pool or len(pool) < (MIN_POOL if place == 1 else 2):
+            if chosen is None or chosen not in eligible or len(eligible) < (MIN_POOL if place == 1 else 2):
                 break
             decisions.append(
                 AwardDecision(
@@ -227,9 +228,9 @@ def _event_decisions(
                     stage,
                     award,
                     place,
-                    tuple(pool),
-                    pool.index(chosen),
-                    field.features(award, pool),
+                    tuple(eligible),
+                    eligible.index(chosen),
+                    field.features(award, eligible),
                 )
             )
             pool = [t for t in pool if t != chosen]
