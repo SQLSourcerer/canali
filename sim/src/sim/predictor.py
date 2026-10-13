@@ -69,3 +69,10 @@ class EpaPredictor:
         if self.epa_version not in warehouse.model_versions(EPA_MODEL):
             raise ValueError(f"no completed {EPA_MODEL} run at version {self.epa_version}")
         return warehouse.batch_fit_run(EPA_MODEL, season, self.epa_version)
+
+
+def predictor_for(version: str) -> Predictor:
+    """The predictor ``version`` names."""
+    if version.startswith(f"{EPA_MODEL}-"):
+        return EpaPredictor(version)
+    raise ValueError(f"no predictor is named by {version!r}")

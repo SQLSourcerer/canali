@@ -67,7 +67,9 @@ class AwardDecision:
 
 
 @dataclass(frozen=True, slots=True)
-class _Placing:
+class Placing:
+    """One team's place in one award at a rated event."""
+
     start: date
     season: int
     team: int
@@ -75,28 +77,30 @@ class _Placing:
     place: int
 
 
-def award_decisions(warehouse: Warehouse, season: int, predictor: Predictor) -> list[AwardDecision]:
-    """Every modelled award winner and Inspire place at a season's REGULAR and RCMP events."""
-    placings: list[_Placing] = []
-    by_event: dict[uuid.UUID, list[AwardRow]] = defaultdict(list)
-    events: list[EventRow] = []
+def placings_by_team(warehouse: Warehouse, season: int) -> dict[int, list[Placing]]:
+    """Every modelled award placing at rated events from ``HISTORY_FROM`` through ``season``, by team."""
+    by_team: dict[int, list[Placing]] = defaultdict(list)
     for s in range(HISTORY_FROM, season + 1):
         dated = {e.event_id: e for e in warehouse.events(s) if e.date_start is not None}
         for a in warehouse.awards(s):
             event = dated.get(a.event_id)
-            if event is None or a.award_code not in AWARD_NAMES:
+            if event is None or a.award_code not in AWARD_NAMES or tier_for(event.event_type) is None:
                 continue
-            if tier_for(event.event_type) is not None:
-                assert event.date_start is not None
-                placings.append(_Placing(event.date_start, s, a.team_number, AWARD_NAMES[a.award_code], a.place))
-            if s == season:
-                by_event[a.event_id].append(a)
-        if s == season:
-            events = list(dated.values())
+            assert event.date_start is not None
+            award = AWARD_NAMES[a.award_code]
+            by_team[a.team_number].append(Placing(event.date_start, s, a.team_number, award, a.place))
+    return by_team
 
-    by_team: dict[int, list[_Placing]] = defaultdict(list)
-    for p in placings:
-        by_team[p.team].append(p)
+
+def award_decisions(warehouse: Warehouse, season: int, predictor: Predictor) -> list[AwardDecision]:
+    """Every modelled award winner and Inspire place at a season's REGULAR and RCMP events."""
+    by_team = placings_by_team(warehouse, season)
+    dated = {e.event_id: e for e in warehouse.events(season) if e.date_start is not None}
+    events = list(dated.values())
+    by_event: dict[uuid.UUID, list[AwardRow]] = defaultdict(list)
+    for a in warehouse.awards(season):
+        if a.event_id in dated and a.award_code in AWARD_NAMES:
+            by_event[a.event_id].append(a)
     ratings = predictor.qualification_end(warehouse, season, before=None)
     teams = warehouse.team_seasons(season)
     seats: dict[uuid.UUID, dict[int, list[tuple[str, int]]]] = defaultdict(lambda: defaultdict(list))
@@ -118,7 +122,7 @@ def award_decisions(warehouse: Warehouse, season: int, predictor: Predictor) -> 
             teams=field,
             rating=np.array([sum(c.values()) for c in components]),
             auto_rating=np.array([sum(v for k, v in c.items() if k.startswith(AUTO_PREFIX)) for c in components]),
-            history=_history(by_team, field, season, event.date_start),
+            history=decayed_history(by_team, field, season, event.date_start),
             rookie=frozenset(t for t in field if t in teams and teams[t].rookie_year == season),
             alliances=[
                 tuple(t for _, t in sorted(members, key=lambda m: role_order[m[0]]))
@@ -162,8 +166,8 @@ def measure_award_models(warehouse: Warehouse, seasons: Sequence[int], predictor
     return models
 
 
-def _history(
-    by_team: dict[int, list[_Placing]], field: Sequence[int], season: int, start: date
+def decayed_history(
+    by_team: dict[int, list[Placing]], field: Sequence[int], season: int, start: date
 ) -> dict[int, dict[str, float]]:
     """Each team's decayed award count from placings on earlier days."""
     history: dict[int, dict[str, float]] = {}

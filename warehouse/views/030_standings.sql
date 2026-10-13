@@ -29,6 +29,12 @@ SELECT a.event_id, e.season, e.code AS event_code, a.advances_to, a.slots, a.slo
 FROM core.event_advancement a
 JOIN core.event e ON e.event_id = a.event_id;
 
+CREATE VIEW pub.v_advancement_slot AS
+SELECT s.event_id, e.season, e.code AS event_code, e.date_start, a.advances_to, s.slot, s.team_number, s.status
+FROM core.advancement_slot s
+JOIN core.event e ON e.event_id = s.event_id
+LEFT JOIN core.event_advancement a ON a.event_id = s.event_id;
+
 CREATE VIEW pub.v_alliance_selection AS
 SELECT
     a.event_id,

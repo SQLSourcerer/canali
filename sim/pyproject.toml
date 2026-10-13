@@ -7,7 +7,11 @@ dependencies = [
     "warehouse",
     "numpy>=2.1",
     "scipy>=1.18",
+    "typer>=0.15",
 ]
+
+[project.scripts]
+sim = "sim.cli:app"
 
 [build-system]
 requires = ["hatchling"]

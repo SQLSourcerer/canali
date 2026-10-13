@@ -77,7 +77,7 @@ with `\dt+ core.*`.
 | `v_ranking`, `v_match_level_order` | Published standings with their tiebreak columns, and the level sort key |
 | `v_award` | One row per award slot awarded |
 | `v_alliance_selection`, `v_alliance_pick` | Seeded alliances and the ordered pick log |
-| `v_event_advancement` | Where an advancing event's slots go and how many, with a Championship's FIRST Championship share |
+| `v_event_advancement`, `v_advancement_slot` | Where an advancing event's slots go and how many, with a Championship's FIRST Championship share, and the team in each slot |
 | `v_opr` | The computed OPR baseline: auto, teleop, total |
 | `v_fit_run`, `v_team_epa`, `v_team_epa_pre_event`, `v_team_pridge` | Model output. `v_fit_run` publishes completed batch runs only. Join it at a named version |
 | `v_rule_pack`, `v_rule_pack_component` | A season's scoring vocabulary. |

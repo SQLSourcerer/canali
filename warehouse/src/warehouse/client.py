@@ -412,6 +412,21 @@ class Warehouse:
                 for r in conn.execute(sql, {"season": season})
             }
 
+    def advanced_before(self, event_id: uuid.UUID) -> frozenset[int]:
+        """Teams given a slot at an earlier event of the season that advances to where this one does."""
+        sql = text(
+            """
+            SELECT DISTINCT s.team_number
+            FROM pub.v_advancement_slot s
+            JOIN pub.v_event_advancement a ON a.event_id = :event
+            JOIN pub.v_event e ON e.event_id = :event
+            WHERE s.season = e.season AND s.advances_to = a.advances_to AND s.date_start < e.date_start
+              AND s.team_number IS NOT NULL
+            """
+        )
+        with self._engine.connect() as conn:
+            return frozenset(r.team_number for r in conn.execute(sql, {"event": event_id}))
+
     def team_seasons(self, season: int) -> dict[int, TeamSeasonRow]:
         """Each team registered in a season, with its rookie year and the city it gives."""
         sql = text(

@@ -1374,6 +1374,7 @@ source = { editable = "sim" }
 dependencies = [
     { name = "numpy" },
     { name = "scipy" },
+    { name = "typer" },
     { name = "warehouse" },
 ]
 
@@ -1381,6 +1382,7 @@ dependencies = [
 requires-dist = [
     { name = "numpy", specifier = ">=2.1" },
     { name = "scipy", specifier = ">=1.18" },
+    { name = "typer", specifier = ">=0.15" },
     { name = "warehouse", editable = "warehouse" },
 ]
 
