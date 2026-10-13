@@ -421,6 +421,24 @@ class Warehouse:
                 for r in conn.execute(sql, {"season": season})
             }
 
+    def event_offers(self, event_id: uuid.UUID) -> list[int]:
+        """Teams an event gave a slot, in slot order, empty until its advancement is published."""
+        sql = text(
+            """
+            SELECT team_number FROM pub.v_advancement_slot
+            WHERE event_id = :event AND status = 'FIRST' AND team_number IS NOT NULL
+            ORDER BY slot
+            """
+        )
+        with self._engine.connect() as conn:
+            return [r.team_number for r in conn.execute(sql, {"event": event_id})]
+
+    def event_points(self, event_id: uuid.UUID) -> dict[int, float]:
+        """Each team's official advancement points at an event."""
+        sql = text("SELECT team_number, points FROM pub.v_advancement_points WHERE event_id = :event")
+        with self._engine.connect() as conn:
+            return {r.team_number: float(r.points) for r in conn.execute(sql, {"event": event_id})}
+
     def advanced_before(self, event_id: uuid.UUID) -> frozenset[int]:
         """Teams given a slot at an earlier event of the season that advances to where this one does."""
         sql = text(

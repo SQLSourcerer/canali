@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from datetime import date
 
 from sim.award_corpus import decayed_history, placings_by_team
 from sim.award_model import INSPIRE
@@ -17,15 +18,21 @@ from warehouse.tier import EventTier, tier_for
 
 
 def event_field(
-    warehouse: Warehouse, event: EventRow, teams: Sequence[int], ratings: Mapping[int, Mapping[str, float]]
+    warehouse: Warehouse,
+    event: EventRow,
+    teams: Sequence[int],
+    ratings: Mapping[int, Mapping[str, float]],
+    *,
+    before: date | None = None,
 ) -> EventField:
-    """``teams`` at ``event`` with ``ratings``, and what rated events before it say of them."""
+    """``teams`` at ``event`` with ``ratings``, and what rated events before it, and before ``before`` when given, say
+    of them."""
     if event.date_start is None:
         raise ValueError(f"{event.event_code} has no start date")
     unrated = sorted(set(teams) - set(ratings))
     if unrated:
         raise ValueError(f"{event.event_code}: no rating for {unrated}")
-    start = event.date_start
+    start = event.date_start if before is None else min(event.date_start, before)
     earlier = {
         e.event_id
         for e in warehouse.events(event.season)
