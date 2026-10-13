@@ -18,6 +18,7 @@ dev = [
     "pridge",
     "analysis",
     "sim",
+    "live",
     "numpy>=2.0",
     "scipy-stubs>=1.18",
     "pgserver>=0.1.4",
@@ -29,12 +30,13 @@ epa = { workspace = true }
 pridge = { workspace = true }
 analysis = { workspace = true }
 sim = { workspace = true }
+live = { workspace = true }
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["warehouse", "epa", "pridge", "analysis", "sim"]
+members = ["warehouse", "epa", "pridge", "analysis", "sim", "live"]
 
 # ---------------------------------------------------------------- ruff
 # A member overrides this with `extend = "../pyproject.toml"` in its own
@@ -48,6 +50,7 @@ src = [
     "pridge/src", "pridge/tests",
     "analysis/src", "analysis/tests",
     "sim/src", "sim/tests",
+    "live/src", "live/tests",
 ]
 
 [tool.ruff.lint]
@@ -86,7 +89,7 @@ docstring-code-format = true
 "pridge/src/pridge/{design,estimator}.py" = ["N803", "N806"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["warehouse", "epa", "pridge", "analysis", "sim"]
+known-first-party = ["warehouse", "epa", "pridge", "analysis", "sim", "live"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "parents"
@@ -100,13 +103,14 @@ strict = true
 warn_unreachable = true
 plugins = ["pydantic.mypy"]
 explicit_package_bases = true
-mypy_path = ["warehouse/src", "epa/src", "pridge/src", "analysis/src", "sim/src"]
+mypy_path = ["warehouse/src", "epa/src", "pridge/src", "analysis/src", "sim/src", "live/src"]
 files = [
     "warehouse/src", "warehouse/tests",
     "epa/src", "epa/tests",
     "pridge/src", "pridge/tests",
     "analysis/src", "analysis/tests",
     "sim/src", "sim/tests",
+    "live/src", "live/tests",
 ]
 
 [[tool.mypy.overrides]]
@@ -116,7 +120,7 @@ implicit_reexport = true
 
 # ---------------------------------------------------------------- pytest
 [tool.pytest.ini_options]
-testpaths = ["warehouse/tests", "epa/tests", "pridge/tests", "analysis/tests", "sim/tests"]
+testpaths = ["warehouse/tests", "epa/tests", "pridge/tests", "analysis/tests", "sim/tests", "live/tests"]
 addopts = "-p warehouse.testing.fixtures -p pridge.testing.fixtures -m 'not credentialed and not scheduled and not db' --strict-markers --import-mode=importlib"
 markers = [
     "credentialed: needs network access or credentials; not run in CI",
