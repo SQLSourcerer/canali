@@ -540,7 +540,7 @@ def upgrade() -> None:
         "event_sim_run",
         sa.Column("sim_run_id", sa.UUID(), nullable=False),
         sa.Column("event_id", sa.UUID(), nullable=False),
-        sa.Column("epa_version", sa.Text(), nullable=False),
+        sa.Column("predictor", sa.Text(), nullable=False),
         sa.Column("sim_version", sa.Text(), nullable=False),
         sa.Column("as_of_match", sa.Integer(), nullable=False),
         sa.Column("n_iterations", sa.Integer(), nullable=False),
@@ -548,7 +548,7 @@ def upgrade() -> None:
         sa.Column("computed_at_utc", postgresql.TIMESTAMP(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["event_id"], ["core.event.event_id"], name=op.f("fk_event_sim_run_event_id")),
         sa.PrimaryKeyConstraint("sim_run_id", name=op.f("pk_event_sim_run")),
-        sa.UniqueConstraint("event_id", "epa_version", "sim_version", "as_of_match", name="uq_event_sim_run_key"),
+        sa.UniqueConstraint("event_id", "predictor", "sim_version", "as_of_match", name="uq_event_sim_run_key"),
         schema="derived",
     )
     op.create_table(
@@ -584,13 +584,13 @@ def upgrade() -> None:
         sa.Column("sim_run_id", sa.UUID(), nullable=False),
         sa.Column("season", sa.Integer(), nullable=False),
         sa.Column("region_code", sa.Text(), nullable=False),
-        sa.Column("epa_version", sa.Text(), nullable=False),
+        sa.Column("predictor", sa.Text(), nullable=False),
         sa.Column("sim_version", sa.Text(), nullable=False),
         sa.Column("n_iterations", sa.Integer(), nullable=False),
         sa.Column("achieved_mcse", sa.Float(), nullable=False),
         sa.Column("computed_at_utc", postgresql.TIMESTAMP(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("sim_run_id", name=op.f("pk_season_sim_run")),
-        sa.UniqueConstraint("season", "region_code", "epa_version", "sim_version", name="uq_season_sim_run_key"),
+        sa.UniqueConstraint("season", "region_code", "predictor", "sim_version", name="uq_season_sim_run_key"),
         schema="derived",
     )
     op.create_table(

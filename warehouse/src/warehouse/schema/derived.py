@@ -137,13 +137,13 @@ event_sim_run = Table(
     metadata,
     Column("sim_run_id", UUID(as_uuid=True), primary_key=True),
     Column("event_id", UUID(as_uuid=True), ForeignKey("core.event.event_id"), nullable=False),
-    Column("epa_version", Text, nullable=False),
+    Column("predictor", Text, nullable=False),
     Column("sim_version", Text, nullable=False),
     Column("as_of_match", Integer, nullable=False),
     Column("n_iterations", Integer, nullable=False),
     Column("achieved_mcse", Float, nullable=False),
     Column("computed_at_utc", TIMESTAMP(timezone=True), nullable=False),
-    UniqueConstraint("event_id", "epa_version", "sim_version", "as_of_match", name="uq_event_sim_run_key"),
+    UniqueConstraint("event_id", "predictor", "sim_version", "as_of_match", name="uq_event_sim_run_key"),
     schema="derived",
 )
 
@@ -181,12 +181,12 @@ season_sim_run = Table(
     Column("sim_run_id", UUID(as_uuid=True), primary_key=True),
     Column("season", Integer, nullable=False),
     Column("region_code", Text, nullable=False),
-    Column("epa_version", Text, nullable=False),
+    Column("predictor", Text, nullable=False),
     Column("sim_version", Text, nullable=False),
     Column("n_iterations", Integer, nullable=False),
     Column("achieved_mcse", Float, nullable=False),
     Column("computed_at_utc", TIMESTAMP(timezone=True), nullable=False),
-    UniqueConstraint("season", "region_code", "epa_version", "sim_version", name="uq_season_sim_run_key"),
+    UniqueConstraint("season", "region_code", "predictor", "sim_version", name="uq_season_sim_run_key"),
     schema="derived",
 )
 

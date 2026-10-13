@@ -26,7 +26,7 @@ def _event_sim_run(engine: Engine) -> uuid.UUID:
             insert(derived.event_sim_run).values(
                 sim_run_id=sim_run_id,
                 event_id=event_id,
-                epa_version="epa-test",
+                predictor="epa-test",
                 sim_version="sim-test",
                 as_of_match=0,
                 n_iterations=1,
