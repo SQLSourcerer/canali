@@ -633,6 +633,22 @@ class Warehouse:
                 for r in conn.execute(sql, {"run": str(fit_run_id), "before": before})
             }
 
+    def event_epa(self, fit_run_id: uuid.UUID, event_id: uuid.UUID, *, through: int) -> dict[int, dict[str, float]]:
+        """Each team's rating components at one event after its first ``through`` matches, the pre-event rating at 0."""
+        sql = text(
+            """
+            SELECT DISTINCT ON (team_number) team_number, components
+            FROM pub.v_team_epa
+            WHERE fit_run_id = :run AND event_id = :event AND tag IN ('pre_event', 'match') AND as_of_match <= :through
+            ORDER BY team_number, as_of_match DESC
+            """
+        )
+        with self._engine.connect() as conn:
+            return {
+                r.team_number: dict(r.components or {})
+                for r in conn.execute(sql, {"run": str(fit_run_id), "event": event_id, "through": through})
+            }
+
     def batch_fit_run(
         self, model: str, season: int, model_version: str, *, prior_version: str | None = None
     ) -> uuid.UUID | None:

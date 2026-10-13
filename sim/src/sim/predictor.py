@@ -31,6 +31,13 @@ class Predictor(Protocol):
         """Each team's predicted points per component after its event's qualification, keyed by event and team."""
         ...
 
+    def event_ratings(
+        self, warehouse: Warehouse, season: int, event_id: uuid.UUID, *, through: int
+    ) -> dict[int, dict[str, float]]:
+        """Each team's predicted points per component at one event after its first ``through`` matches, before the
+        event at 0."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class EpaPredictor:
@@ -51,6 +58,12 @@ class EpaPredictor:
     ) -> dict[tuple[uuid.UUID, int], dict[str, float]]:
         run = self._run(warehouse, season)
         return {} if run is None else warehouse.qualification_end_epa(run, before=before)
+
+    def event_ratings(
+        self, warehouse: Warehouse, season: int, event_id: uuid.UUID, *, through: int
+    ) -> dict[int, dict[str, float]]:
+        run = self._run(warehouse, season)
+        return {} if run is None else warehouse.event_epa(run, event_id, through=through)
 
     def _run(self, warehouse: Warehouse, season: int) -> uuid.UUID | None:
         if self.epa_version not in warehouse.model_versions(EPA_MODEL):
