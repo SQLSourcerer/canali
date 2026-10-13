@@ -9,7 +9,7 @@ import json
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import structlog
@@ -726,6 +726,41 @@ class Warehouse:
                 sql, {"model": model, "event": event_id, "version": model_version, "prior": prior_version}
             ).scalar()
         return None if found is None else uuid.UUID(str(found))
+
+    def batch_finished_at(
+        self, model: str, season: int, model_version: str, *, prior_version: str | None = None
+    ) -> datetime | None:
+        """When the completed batch run for one model, season, version and prior version finished."""
+        sql = text(
+            """
+            SELECT max(finished_at_utc) FROM pub.v_fit_run
+            WHERE model = :model AND season = :season AND model_version = :version
+              AND prior_version IS NOT DISTINCT FROM :prior
+            """
+        )
+        with self._engine.connect() as conn:
+            return conn.execute(
+                sql, {"model": model, "season": season, "version": model_version, "prior": prior_version}
+            ).scalar()
+
+    def live_fit_events(
+        self, model: str, season: int, model_version: str, *, prior_version: str | None = None
+    ) -> set[uuid.UUID]:
+        """The season's events with a completed live run for one model, version and prior version."""
+        sql = text(
+            """
+            SELECT DISTINCT event_id FROM pub.v_live_fit_run
+            WHERE model = :model AND season = :season AND model_version = :version
+              AND prior_version IS NOT DISTINCT FROM :prior
+            """
+        )
+        with self._engine.connect() as conn:
+            return {
+                uuid.UUID(str(r.event_id))
+                for r in conn.execute(
+                    sql, {"model": model, "season": season, "version": model_version, "prior": prior_version}
+                )
+            }
 
     def fit_run_notes(self, fit_run_id: uuid.UUID) -> dict[str, Any]:
         """What a completed batch run recorded about itself."""

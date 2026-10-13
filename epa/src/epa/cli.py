@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import replace
 from typing import Annotated
 
 import structlog
@@ -76,7 +76,6 @@ def replay(
                 listed=warehouse.team_seasons(season),
             )
             result = run.result
-            layoff = for_season(season).layoff_boost
             skipped = f", {result.skipped_missing_breakdown} skipped" if result.skipped_missing_breakdown else ""
             counts = f"{result.matches} matches, {result.teams} teams, {len(result.rows)} rows"
             _echo(f"{season}: {counts}{skipped}")
@@ -86,15 +85,7 @@ def replay(
                     result.rows,
                     season=season,
                     scope=f"season:{season}",
-                    notes={
-                        "partition": list(run.partition.names),
-                        "mu": run.season_scale.mu if run.season_scale else None,
-                        "sigma": run.season_scale.sigma if run.season_scale else None,
-                        "reconciled": run.report.rate,
-                        "init_sigma": run.init_scale.sigma,
-                        "init_provisional": run.init_scale.provisional,
-                        "layoff": None if layoff is None else asdict(layoff),
-                    },
+                    notes=run.notes(),
                 )
                 _echo(f"        fit_run {run_id}")
             previous, second = result.final_norm, previous

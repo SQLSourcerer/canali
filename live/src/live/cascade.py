@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
 import structlog
 
 from epa.pipeline import persist, replay_live_event
+from epa.replay import EpaRow
+from pridge.fit import EventFit
 from pridge.pipeline import load_event, run_live
 from pridge.prior import EpaPriorSource
 from sim.pipeline import simulate_published_event
@@ -43,19 +46,8 @@ def cascade(
     """Rate ``event`` live with EPA at ``epa_version``, refit pRidge from match ``from_match`` on, then simulate the
     event from its latest match with EPA as the predictor."""
     epa_rows = replay_live_event(warehouse, event.season, event.event_id, model_version=epa_version).rows
-    epa_run = persist(
-        warehouse,
-        epa_rows,
-        season=event.season,
-        scope=f"event:{event.event_id}",
-        event_id=event.event_id,
-        model_version=epa_version,
-    )
-    log.info("live.epa", code=event.event_code, rows=len(epa_rows))
-
-    source = EpaPriorSource.for_season(warehouse, event.season, epa_version)
-    fits = run_live(warehouse, load_event(warehouse, event.event_id, event.season, source), from_match=from_match)
-    log.info("live.pridge", code=event.event_code, fits=len(fits))
+    epa_run = persist_epa(warehouse, event, epa_rows, epa_version)
+    fits = refit_pridge(warehouse, event, epa_version, from_match=from_match)
 
     pack = next((p for p in discover() if p.season == event.season), None)
     if pack is None:
@@ -71,3 +63,25 @@ def cascade(
         as_of_match=published.as_of_match,
         sim_run=sim_run,
     )
+
+
+def persist_epa(warehouse: Warehouse, event: EventRow, rows: Sequence[EpaRow], epa_version: str) -> uuid.UUID:
+    """Write a live replay's rows under the event's live run."""
+    run = persist(
+        warehouse,
+        rows,
+        season=event.season,
+        scope=f"event:{event.event_id}",
+        event_id=event.event_id,
+        model_version=epa_version,
+    )
+    log.info("live.epa", code=event.event_code, rows=len(rows))
+    return run
+
+
+def refit_pridge(warehouse: Warehouse, event: EventRow, epa_version: str, *, from_match: int) -> list[EventFit]:
+    """Refit pRidge on the event at every match index from ``from_match``, its prior read at ``epa_version``."""
+    source = EpaPriorSource.for_season(warehouse, event.season, epa_version)
+    fits = run_live(warehouse, load_event(warehouse, event.event_id, event.season, source), from_match=from_match)
+    log.info("live.pridge", code=event.event_code, fits=len(fits))
+    return fits

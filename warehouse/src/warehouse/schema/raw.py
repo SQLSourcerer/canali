@@ -14,6 +14,7 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     Column,
+    Date,
     ForeignKey,
     Identity,
     Index,
@@ -135,4 +136,14 @@ match_signal = Table(
         "Each match of a watched event the live poller saw scored or replayed, written with the match itself. "
         "Read in signal_id order."
     ),
+)
+
+sweep = Table(
+    "sweep",
+    metadata,
+    Column("season", Integer, primary_key=True),
+    Column("swept_on", Date, primary_key=True),
+    Column("finished_at_utc", TIMESTAMP(timezone=True), nullable=False),
+    schema="raw",
+    comment="Each weekly sweep the poller finished, by the local date it ran. The live batch waits for it.",
 )

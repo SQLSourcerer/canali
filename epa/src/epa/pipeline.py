@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 
 import structlog
@@ -81,6 +81,19 @@ class SeasonRun:
     season_scale: Scale | None
     init_scale: Scale
     result: ReplayResult
+
+    def notes(self) -> dict[str, object]:
+        """What the run's ``fit_run`` records about it."""
+        layoff = for_season(self.season).layoff_boost
+        return {
+            "partition": list(self.partition.names),
+            "mu": self.season_scale.mu if self.season_scale else None,
+            "sigma": self.season_scale.sigma if self.season_scale else None,
+            "reconciled": self.report.rate,
+            "init_sigma": self.init_scale.sigma,
+            "init_provisional": self.init_scale.provisional,
+            "layoff": None if layoff is None else asdict(layoff),
+        }
 
 
 def load_season(warehouse: Warehouse, season: int, *, strict: bool = False, group: str | None = None) -> SeasonData:
@@ -215,7 +228,7 @@ def replay_live_event(
     resolved = partition if partition is not None else season_partition(warehouse, season)
     constants = for_season(season)
     history = _season_history(warehouse, season, ordinals[event_id])
-    previous_norm, second_norm = _prior_norms(warehouse, season, model_version)
+    previous_norm, second_norm = prior_norms(warehouse, season, model_version)
 
     result = replay_season(
         matches,
@@ -274,7 +287,7 @@ def _seed_from_batch(
     return seed
 
 
-def _prior_norms(warehouse: Warehouse, season: int, model_version: str) -> tuple[dict[int, float], dict[int, float]]:
+def prior_norms(warehouse: Warehouse, season: int, model_version: str) -> tuple[dict[int, float], dict[int, float]]:
     """The two previous seasons' final norm ratings, as carryover splits a team's history between them."""
     carried: list[dict[int, float]] = []
     for prior in (season - 1, season - 2):

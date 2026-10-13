@@ -1,10 +1,4 @@
-"""The poll loop.
-
-The event list is fetched once at start. Each tick asks the scheduler what is due, fetches it through the ingest
-pipeline, and feeds back what changed: a hybrid schedule whose payload changed marks its level, and a changed playoff
-is checked for a decided final. On Mondays the event list is fetched again, newly published watched events join, and
-the weekly sweep ingests one unwatched event per tick.
-"""
+"""The poll loop."""
 
 from __future__ import annotations
 
@@ -21,7 +15,7 @@ from warehouse.ingest.pipeline import Endpoint, Ingestor
 from warehouse.poll import schedule
 from warehouse.poll.cadence import Cadence
 from warehouse.poll.schedule import EventState, EventWindow, Level, PlayoffResult
-from warehouse.poll.sweep import sweep_due, sweep_targets
+from warehouse.poll.sweep import mark_swept, sweep_due, sweep_targets
 from warehouse.poll.watch import WatchList, latest_season
 from warehouse.schema import core
 from warehouse.schema.types import ELIMINATION_MATCHES
@@ -44,6 +38,7 @@ class Poller:
         self.tz = ZoneInfo(ingestor.settings.default_timezone)
         self.last_swept: dt.date | None = None
         self.sweep_queue: list[str] = []
+        self.swept_on = dt.date.min
 
     def start(self) -> None:
         with self.ingestor.engine.connect() as conn:
@@ -64,7 +59,10 @@ class Poller:
     def queue_sweep(self, today: dt.date) -> None:
         with self.ingestor.engine.connect() as conn:
             self.sweep_queue = sweep_targets(conn, self.season, self.windows.keys(), today)
+        self.swept_on = today
         log.info("sweep.start", events=len(self.sweep_queue))
+        if not self.sweep_queue:
+            self._finish_sweep()
 
     def sweep_one(self) -> None:
         code = self.sweep_queue.pop(0)
@@ -73,7 +71,12 @@ class Poller:
         except Exception as exc:
             log.warning("sweep.event_failed", event_code=code, error=str(exc))
         if not self.sweep_queue:
-            log.info("sweep.done")
+            self._finish_sweep()
+
+    def _finish_sweep(self) -> None:
+        with self.ingestor.engine.begin() as conn:
+            mark_swept(conn, self.season, self.swept_on)
+        log.info("sweep.done")
 
     def tick(self, now: dt.datetime) -> None:
         for event_id, window in self.windows.items():

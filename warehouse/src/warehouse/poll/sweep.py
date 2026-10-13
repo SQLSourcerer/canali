@@ -10,8 +10,9 @@ import uuid
 from collections.abc import Collection
 
 from sqlalchemy import Connection, func, select
+from sqlalchemy.dialects.postgresql import insert
 
-from warehouse.schema import core
+from warehouse.schema import core, raw
 from warehouse.tier import RATED_EVENT_TYPES
 
 MONDAY = 0
@@ -38,3 +39,18 @@ def sweep_targets(conn: Connection, season: int, watched: Collection[uuid.UUID],
         .order_by(e.date_start, e.code)
     )
     return [str(r.code) for r in rows]
+
+
+def mark_swept(conn: Connection, season: int, day: dt.date) -> None:
+    stmt = insert(raw.sweep).values(season=season, swept_on=day, finished_at_utc=func.now())
+    conn.execute(
+        stmt.on_conflict_do_update(
+            index_elements=["season", "swept_on"], set_={"finished_at_utc": stmt.excluded.finished_at_utc}
+        )
+    )
+
+
+def last_swept(conn: Connection, season: int) -> dt.datetime | None:
+    """When the season's latest sweep finished."""
+    s = raw.sweep.c
+    return conn.execute(select(func.max(s.finished_at_utc)).where(s.season == season)).scalar()
