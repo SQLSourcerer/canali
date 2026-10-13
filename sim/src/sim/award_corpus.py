@@ -12,6 +12,7 @@ import numpy as np
 import numpy.typing as npt
 
 from sim.award_model import (
+    AUTO_PREFIX,
     AWARD_NAMES,
     HISTORY_DECAY,
     INSPIRE,
@@ -33,7 +34,6 @@ HISTORY_FROM = 2022
 
 INSPIRE_EXCLUSIVE_FROM = 2024
 
-AUTO_PREFIX = "auto"
 MIN_FIELD = 4
 MIN_POOL = 3
 STAGES = (EventTier.REGULAR, EventTier.RCMP)

@@ -33,6 +33,8 @@ TEAM_ATTRIBUTE_AWARDS = frozenset({"Connect", "Think", "JudgesChoice", "Reach", 
 
 INSPIRE_PLACED = "InspirePlaced"
 
+AUTO_PREFIX = "auto"
+
 # Awards fitted per tier; every other award has one model across tiers.
 TIER_SPLIT_AWARDS = frozenset({INSPIRE})
 
