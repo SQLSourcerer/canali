@@ -76,6 +76,7 @@ def load(conn: Connection, packs: Iterable[RulePack]) -> dict[int, int]:
             alliance_brackets=[b.model_dump() for b in pack.structure.alliance_brackets] or None,
             playoff_implemented=pack.structure.playoff_implemented,
             advancement_implemented=pack.structure.advancement_implemented,
+            advancement_points=a.model_dump() if (a := pack.structure.advancement_points) else None,
             loaded_at_utc=now,
         )
         conn.execute(

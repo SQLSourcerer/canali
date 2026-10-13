@@ -43,7 +43,7 @@ SELECT
     season, game, version, rp_win, rp_tie, rp_loss, has_bonus_rp,
     ranking_formula, tiebreakers,
     playoff_structure, alliance_brackets, playoff_implemented,
-    advancement_implemented
+    advancement_implemented, advancement_points
 FROM core.rule_pack;
 
 CREATE VIEW pub.v_rule_pack_component AS

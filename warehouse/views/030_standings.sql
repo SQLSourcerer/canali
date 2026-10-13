@@ -13,8 +13,7 @@ SELECT a.event_id, e.season, e.code AS event_code, a.award_code, a.series, a.tea
 FROM core.award a
 JOIN core.event e ON e.event_id = a.event_id;
 
--- Event size is inferred: it is the count of teams FTC Events listed at schedule generation, so a
--- forthcoming event has no size until its schedule posts.
+-- Event size is inferred: it is the count of teams FTC Events listed at schedule generation.
 CREATE VIEW pub.v_event_size AS
 SELECT
     e.event_id,
@@ -24,6 +23,11 @@ SELECT
 FROM core.event e
 LEFT JOIN core.event_team et ON et.event_id = e.event_id
 GROUP BY e.event_id, e.season, e.code;
+
+CREATE VIEW pub.v_event_advancement AS
+SELECT a.event_id, e.season, e.code AS event_code, a.advances_to, a.slots, a.slots_first_championship
+FROM core.event_advancement a
+JOIN core.event e ON e.event_id = a.event_id;
 
 CREATE VIEW pub.v_alliance_selection AS
 SELECT

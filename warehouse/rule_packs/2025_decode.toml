@@ -47,6 +47,16 @@ playoff_structure = "double_elimination_scaled"
 playoff_implemented = true
 advancement_implemented = true
 
+# Competition Manual, Table 4-1 and section 4.1.1.
+[structure.advancement_points]
+qualification_max = 16
+qualification_min = 2
+qualification_alpha = 1.07
+selection_base = 21
+playoff = [40, 20, 10, 5]
+inspire = [60, 30, 15]
+other_awards = [12, 6, 3]
+
 [[structure.alliance_brackets]]
 min_teams = 4
 max_teams = 10

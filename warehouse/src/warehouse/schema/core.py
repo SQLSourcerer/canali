@@ -290,6 +290,7 @@ rule_pack = Table(
     Column("alliance_brackets", jsonb(), nullable=True),
     Column("playoff_implemented", Boolean, nullable=False, server_default=text("false")),
     Column("advancement_implemented", Boolean, nullable=False, server_default=text("false")),
+    Column("advancement_points", jsonb(), nullable=True),
     Column("loaded_at_utc", TIMESTAMP(timezone=True), nullable=False),
     schema="core",
     comment="Processed from files in this repo manually created off of the game manuals.",

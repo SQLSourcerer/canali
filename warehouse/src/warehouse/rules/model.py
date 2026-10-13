@@ -134,6 +134,20 @@ class AllianceBracket(BaseModel):
     alliances: int
 
 
+class AdvancementPoints(BaseModel):
+    """Points a team earns toward advancement at one event, by category."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    qualification_max: int
+    qualification_min: int
+    qualification_alpha: float
+    selection_base: int
+    playoff: list[int] = Field(min_length=1)
+    inspire: list[int] = Field(min_length=1)
+    other_awards: list[int] = Field(min_length=1)
+
+
 class Structure(BaseModel):
     """How a season runs an event's playoff."""
 
@@ -142,6 +156,7 @@ class Structure(BaseModel):
     playoff_structure: str | None = None
     playoff_implemented: bool = False
     advancement_implemented: bool = False
+    advancement_points: AdvancementPoints | None = None
     # The recommended playoff structure based on event size.
     alliance_brackets: list[AllianceBracket] = Field(default_factory=list)
 
@@ -155,6 +170,12 @@ class Structure(BaseModel):
                     f"{bracket.min_teams}-{bracket.max_teams} is not"
                 )
             previous = bracket.max_teams
+        return self
+
+    @model_validator(mode="after")
+    def _advancement_has_points(self) -> Self:
+        if self.advancement_implemented and self.advancement_points is None:
+            raise ValueError("advancement_implemented needs advancement_points")
         return self
 
 

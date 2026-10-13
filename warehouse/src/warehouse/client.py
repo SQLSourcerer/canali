@@ -101,6 +101,16 @@ class AllianceSlotRow:
 
 
 @dataclass(frozen=True, slots=True)
+class EventAdvancementRow:
+    """Where an event's advancement slots go and how many."""
+
+    event_id: uuid.UUID
+    advances_to: str | None
+    slots: int
+    slots_first_championship: int
+
+
+@dataclass(frozen=True, slots=True)
 class OprRow:
     event_id: uuid.UUID
     season: int
@@ -316,6 +326,20 @@ class Warehouse:
                 AllianceSlotRow(uuid.UUID(str(r.event_id)), r.seed, r.team_number, r.role)
                 for r in conn.execute(sql, {"season": season})
             ]
+
+    def event_advancement(self, season: int) -> dict[uuid.UUID, EventAdvancementRow]:
+        """A season's published advancement slots, by event."""
+        sql = text(
+            "SELECT event_id, advances_to, slots, slots_first_championship FROM pub.v_event_advancement"
+            " WHERE season = :season"
+        )
+        with self._engine.connect() as conn:
+            return {
+                uuid.UUID(str(r.event_id)): EventAdvancementRow(
+                    uuid.UUID(str(r.event_id)), r.advances_to, r.slots or 0, r.slots_first_championship or 0
+                )
+                for r in conn.execute(sql, {"season": season})
+            }
 
     def team_seasons(self, season: int) -> dict[int, TeamSeasonRow]:
         """Each team registered in a season, with its rookie year and the city it gives."""

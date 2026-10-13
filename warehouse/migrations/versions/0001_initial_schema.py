@@ -136,6 +136,7 @@ def upgrade() -> None:
         sa.Column("alliance_brackets", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
         sa.Column("playoff_implemented", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("advancement_implemented", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+        sa.Column("advancement_points", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
         sa.Column("loaded_at_utc", postgresql.TIMESTAMP(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["season"], ["core.season.season"], name=op.f("fk_rule_pack_season")),
         sa.PrimaryKeyConstraint("season", name=op.f("pk_rule_pack")),
