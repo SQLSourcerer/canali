@@ -10,7 +10,7 @@ import structlog
 import typer
 from sqlalchemy import text
 
-from warehouse import migrate, views
+from warehouse import migrate, registration, views
 from warehouse.config import load_settings
 from warehouse.db import make_engine
 from warehouse.rules import generate, loader
@@ -21,11 +21,13 @@ rules_app = typer.Typer(no_args_is_help=True, help="Rule packs.")
 ingest_app = typer.Typer(no_args_is_help=True, help="Ingest from FTC Events and FTCScout.")
 derive_app = typer.Typer(no_args_is_help=True, help="Quantities the warehouse computes.")
 ops_app = typer.Typer(no_args_is_help=True, help="Fit runs and model versions.")
+registration_app = typer.Typer(no_args_is_help=True, help="Event registration snapshots.")
 app.add_typer(db_app, name="db")
 app.add_typer(rules_app, name="rules")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(derive_app, name="derive")
 app.add_typer(ops_app, name="ops")
+app.add_typer(registration_app, name="registration")
 
 log = structlog.get_logger("warehouse.cli")
 
@@ -148,6 +150,25 @@ def rules_generate(
         _echo(f"{len(components)} components -> {out}")
     else:
         _echo(rendered)
+
+
+# -------------------------------------------------------------------------------------------------- registration
+
+
+@registration_app.command("load")
+def registration_load(
+    paths: Annotated[list[Path], typer.Argument(help="Snapshot files, or directories searched for them")],
+) -> None:
+    """Load registration snapshots into core.registration_*, replacing any already loaded."""
+    files = registration.snapshot_files(paths)
+    if not files:
+        raise typer.BadParameter("no snapshot files found")
+    engine = make_engine()
+    with engine.begin() as conn:
+        for path in files:
+            snapshot, _ = registration.load_file(conn, path)
+            label = f"{snapshot.region} {snapshot.season} {snapshot.as_of:%Y-%m-%dT%H:%MZ}"
+            _echo(f"{label}: {len(snapshot.events)} events")
 
 
 # -------------------------------------------------------------------------------------------- ingest: FTC Events

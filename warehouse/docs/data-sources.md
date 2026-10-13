@@ -81,6 +81,11 @@ suppliers agree. `tests/test_cross_supplier.py` audits them against each other, 
 
 Award conflicts compare `team_number` alone, never the name. A null winner is dropped at ingest rather than stored.
 
+## Registration snapshots
+
+`core.registration_*` holds event registration, which neither supplier publishes. It is often tracked differently per region.
+A [standard JSON formated for registration](../src/warehouse/registration.py) is established for external suppliers to supply.
+
 ## See also
 
 - `../README.md`: schemas, roles and the command surface.

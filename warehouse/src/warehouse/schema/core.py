@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     Float,
@@ -259,6 +260,65 @@ advancement_slot = Table(
     Column("status", Text, nullable=True),
     schema="core",
     comment=("The order in which advancement slots were assigned."),
+)
+
+registration_snapshot = Table(
+    "registration_snapshot",
+    metadata,
+    Column("snapshot_id", UUID(as_uuid=True), primary_key=True),
+    Column("region_code", Text, nullable=False),
+    Column("season", Integer, ForeignKey("core.season.season"), nullable=False),
+    Column("as_of_utc", TIMESTAMP(timezone=True), nullable=False),
+    Column("source_file", Text, nullable=False),
+    Column("loaded_at_utc", TIMESTAMP(timezone=True), nullable=False),
+    UniqueConstraint("region_code", "season", "as_of_utc", name="uq_registration_snapshot_key"),
+    schema="core",
+    comment="One read of a region's event registration, from files written outside the repository. Every one is kept.",
+)
+
+registration_event = Table(
+    "registration_event",
+    metadata,
+    Column(
+        "snapshot_id",
+        UUID(as_uuid=True),
+        ForeignKey("core.registration_snapshot.snapshot_id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("event_ordinal", Integer, primary_key=True),
+    # Null for an event FTC Events doesn't list.
+    Column("event_code", Text, nullable=True),
+    Column("name", Text, nullable=False),
+    Column("event_type", Text, nullable=True),
+    Column("date_start", Date, nullable=True),
+    Column("source_url", Text, nullable=True),
+    Column("capacity", Integer, nullable=True),
+    Column("closed", Boolean, nullable=True),
+    Column("teams_known", Boolean, nullable=False),
+    Column("waitlist_known", Boolean, nullable=False),
+    schema="core",
+    comment="An outstanding event as one registration snapshot saw it, in the snapshot's date order.",
+)
+
+registration_team = Table(
+    "registration_team",
+    metadata,
+    Column("snapshot_id", UUID(as_uuid=True), primary_key=True),
+    Column("event_ordinal", Integer, primary_key=True),
+    Column("status", Text, primary_key=True),
+    Column("position", Integer, primary_key=True),
+    Column("team_number", Integer, nullable=True),
+    Column("name", Text, nullable=True),
+    Column("priority", Text, nullable=True),
+    ForeignKeyConstraint(
+        ["snapshot_id", "event_ordinal"],
+        ["core.registration_event.snapshot_id", "core.registration_event.event_ordinal"],
+        ondelete="CASCADE",
+    ),
+    CheckConstraint("status IN ('registered', 'held', 'waitlist')", name="status"),
+    CheckConstraint("team_number IS NOT NULL OR status = 'held'", name="team_number"),
+    schema="core",
+    comment="A registered, held or waitlisted entry at one event in one snapshot, in the source's order.",
 )
 
 event_advancement = Table(

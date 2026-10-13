@@ -245,6 +245,66 @@ def upgrade() -> None:
         comment="Judged team awards that were won.",
     )
     op.create_table(
+        "registration_snapshot",
+        sa.Column("snapshot_id", sa.UUID(), nullable=False),
+        sa.Column("region_code", sa.Text(), nullable=False),
+        sa.Column("season", sa.Integer(), nullable=False),
+        sa.Column("as_of_utc", postgresql.TIMESTAMP(timezone=True), nullable=False),
+        sa.Column("source_file", sa.Text(), nullable=False),
+        sa.Column("loaded_at_utc", postgresql.TIMESTAMP(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["season"], ["core.season.season"], name=op.f("fk_registration_snapshot_season")),
+        sa.PrimaryKeyConstraint("snapshot_id", name=op.f("pk_registration_snapshot")),
+        sa.UniqueConstraint("region_code", "season", "as_of_utc", name="uq_registration_snapshot_key"),
+        schema="core",
+        comment="One read of a region's event registration, from files written outside the repository. Every one is kept.",
+    )
+    op.create_table(
+        "registration_event",
+        sa.Column("snapshot_id", sa.UUID(), nullable=False),
+        sa.Column("event_ordinal", sa.Integer(), nullable=False),
+        sa.Column("event_code", sa.Text(), nullable=True),
+        sa.Column("name", sa.Text(), nullable=False),
+        sa.Column("event_type", sa.Text(), nullable=True),
+        sa.Column("date_start", sa.Date(), nullable=True),
+        sa.Column("source_url", sa.Text(), nullable=True),
+        sa.Column("capacity", sa.Integer(), nullable=True),
+        sa.Column("closed", sa.Boolean(), nullable=True),
+        sa.Column("teams_known", sa.Boolean(), nullable=False),
+        sa.Column("waitlist_known", sa.Boolean(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["snapshot_id"],
+            ["core.registration_snapshot.snapshot_id"],
+            name=op.f("fk_registration_event_snapshot_id"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("snapshot_id", "event_ordinal", name=op.f("pk_registration_event")),
+        schema="core",
+        comment="An outstanding event as one registration snapshot saw it, in the snapshot's date order.",
+    )
+    op.create_table(
+        "registration_team",
+        sa.Column("snapshot_id", sa.UUID(), nullable=False),
+        sa.Column("event_ordinal", sa.Integer(), nullable=False),
+        sa.Column("status", sa.Text(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.Column("team_number", sa.Integer(), nullable=True),
+        sa.Column("name", sa.Text(), nullable=True),
+        sa.Column("priority", sa.Text(), nullable=True),
+        sa.CheckConstraint("status IN ('registered', 'held', 'waitlist')", name=op.f("ck_registration_team_status")),
+        sa.CheckConstraint("team_number IS NOT NULL OR status = 'held'", name=op.f("ck_registration_team_team_number")),
+        sa.ForeignKeyConstraint(
+            ["snapshot_id", "event_ordinal"],
+            ["core.registration_event.snapshot_id", "core.registration_event.event_ordinal"],
+            name=op.f("fk_registration_team_snapshot_id_event_ordinal"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "snapshot_id", "event_ordinal", "status", "position", name=op.f("pk_registration_team")
+        ),
+        schema="core",
+        comment="A registered, held or waitlisted entry at one event in one snapshot, in the source's order.",
+    )
+    op.create_table(
         "event_advancement",
         sa.Column("event_id", sa.UUID(), nullable=False),
         sa.Column("advances_to", sa.Text(), nullable=True),
@@ -671,6 +731,9 @@ def downgrade() -> None:
     op.drop_index("ix_event_team_team_number_event_id", table_name="event_team", schema="core")
     op.drop_table("event_team", schema="core")
     op.drop_table("event_advancement", schema="core")
+    op.drop_table("registration_team", schema="core")
+    op.drop_table("registration_event", schema="core")
+    op.drop_table("registration_snapshot", schema="core")
     op.drop_table("award", schema="core")
     op.drop_table("advancement_slot", schema="core")
     op.drop_table("advancement_points", schema="core")
