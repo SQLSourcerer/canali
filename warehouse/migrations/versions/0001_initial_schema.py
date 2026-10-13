@@ -646,11 +646,15 @@ def upgrade() -> None:
         sa.Column("region_code", sa.Text(), nullable=False),
         sa.Column("predictor", sa.Text(), nullable=False),
         sa.Column("sim_version", sa.Text(), nullable=False),
+        sa.Column("events_started", sa.Integer(), nullable=False),
+        sa.Column("as_of_date", sa.Date(), nullable=False),
         sa.Column("n_iterations", sa.Integer(), nullable=False),
         sa.Column("achieved_mcse", sa.Float(), nullable=False),
         sa.Column("computed_at_utc", postgresql.TIMESTAMP(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("sim_run_id", name=op.f("pk_season_sim_run")),
-        sa.UniqueConstraint("season", "region_code", "predictor", "sim_version", name="uq_season_sim_run_key"),
+        sa.UniqueConstraint(
+            "season", "region_code", "predictor", "sim_version", "events_started", name="uq_season_sim_run_key"
+        ),
         schema="derived",
     )
     op.create_table(

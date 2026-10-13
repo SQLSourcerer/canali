@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     Float,
     ForeignKey,
     Index,
@@ -183,10 +184,14 @@ season_sim_run = Table(
     Column("region_code", Text, nullable=False),
     Column("predictor", Text, nullable=False),
     Column("sim_version", Text, nullable=False),
+    Column("events_started", Integer, nullable=False),
+    Column("as_of_date", Date, nullable=False),
     Column("n_iterations", Integer, nullable=False),
     Column("achieved_mcse", Float, nullable=False),
     Column("computed_at_utc", TIMESTAMP(timezone=True), nullable=False),
-    UniqueConstraint("season", "region_code", "predictor", "sim_version", name="uq_season_sim_run_key"),
+    UniqueConstraint(
+        "season", "region_code", "predictor", "sim_version", "events_started", name="uq_season_sim_run_key"
+    ),
     schema="derived",
 )
 

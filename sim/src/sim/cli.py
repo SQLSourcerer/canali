@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 
@@ -14,7 +15,8 @@ from sim.predictor import predictor_for
 from sim.progress import published_event
 from sim.rosters import Rosters
 from sim.runner import EventSummary, fixed_field, generated_field, run_event
-from sim.writer import write_event_summary
+from sim.season import read_season, run_season
+from sim.writer import write_event_summary, write_season_summary
 from warehouse.client import EventRow, Warehouse
 from warehouse.rules.loader import discover
 
@@ -90,6 +92,57 @@ def event(
         _report(event_code, published.as_of_match, summary)
         if write:
             sim_run_id = write_event_summary(warehouse, row.event_id, chosen.version, published.as_of_match, summary)
+            _echo(f"        sim_run {sim_run_id}")
+
+
+@app.command("season")
+def season(
+    season: int,
+    *,
+    predictor: PREDICTOR,
+    rosters: Annotated[Path, typer.Option(help="The region's roster file, naming every event of its season")],
+    before: Annotated[str | None, typer.Option(help="Play the season from this date, YYYY-MM-DD, not today")] = None,
+    matches_per_team: Annotated[int, typer.Option(help="Qualification matches per team in a generated schedule")] = 5,
+    tolerance: Annotated[float, typer.Option(help="Largest standard error the run stops at")] = TOLERANCE,
+    seed: Annotated[int | None, typer.Option(help="Random seed")] = None,
+    write: Annotated[
+        bool, typer.Option(help="Persist the run to derived.season_sim_run, replacing one since the last event began")
+    ] = False,
+) -> None:
+    """Simulate a region's season from its roster file and print each team's chances."""
+    pack = next((p for p in discover() if p.season == season), None)
+    if pack is None:
+        raise typer.BadParameter(f"no rule pack for {season}")
+    try:
+        chosen = predictor_for(predictor)
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="--predictor") from e
+    sample = Rosters.from_file(rosters)
+    if sample.season != season:
+        raise typer.BadParameter(f"{rosters} is for {sample.season}, not {season}", param_hint="--rosters")
+    cutoff = None if before is None else date.fromisoformat(before)
+    as_of = cutoff or date.today()
+
+    with Warehouse() as warehouse:
+        state = read_season(warehouse, pack, chosen, sample, before=cutoff)
+        upcoming = next((q for q in state.qualifiers if not q.done), state.championship)
+        models = event_models(warehouse, upcoming.event, chosen)
+        summary = run_season(
+            state, pack, models, np.random.default_rng(seed), tolerance=tolerance, matches_per_team=matches_per_team
+        )
+        started = state.events_started(as_of)
+        _echo(
+            f"{sample.region} {season} as of {as_of}, {started} events started: {summary.iterations} seasons, "
+            f"standard error {summary.standard_error:.4f}"
+        )
+        _echo(f"{'team':>6} {'attend':>7} {'premier':>8} {'FIRST':>6}")
+        for team in sorted(summary.teams, key=lambda t: -summary.teams[t].p_attend_rcmp):
+            t = summary.teams[team]
+            _echo(f"{team:>6} {t.p_attend_rcmp:7.3f} {t.p_premier:8.3f} {t.p_cmp:6.3f}")
+        if write:
+            sim_run_id = write_season_summary(
+                warehouse, season, sample.region, chosen.version, summary, events_started=started, as_of=as_of
+            )
             _echo(f"        sim_run {sim_run_id}")
 
 

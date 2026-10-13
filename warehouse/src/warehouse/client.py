@@ -1015,6 +1015,39 @@ class Warehouse:
                 _execute_chunked(conn, insert_results, payload)
         return sim_run_id
 
+    def write_season_sim(self, run: Mapping[str, Any], results: Sequence[Mapping[str, Any]]) -> uuid.UUID:
+        """Write one season sim run and its per-team results, replacing any run at the same season, region,
+        predictor, sim version and count of events started."""
+        delete = text(
+            """
+            DELETE FROM derived.season_sim_run
+            WHERE season = :season AND region_code = :region_code AND predictor = :predictor
+              AND sim_version = :sim_version AND events_started = :events_started
+            """
+        )
+        insert_run = text(
+            """
+            INSERT INTO derived.season_sim_run
+                (sim_run_id, season, region_code, predictor, sim_version, events_started, as_of_date, n_iterations,
+                 achieved_mcse, computed_at_utc)
+            VALUES (:sim_run_id, :season, :region_code, :predictor, :sim_version, :events_started, :as_of_date,
+                    :n_iterations, :achieved_mcse, now())
+            """
+        )
+        insert_results = text(
+            """
+            INSERT INTO derived.season_sim_result (sim_run_id, team_number, p_attend_rcmp, p_premier, p_cmp)
+            VALUES (:sim_run_id, :team_number, :p_attend_rcmp, :p_premier, :p_cmp)
+            """
+        )
+        sim_run_id = uuid.uuid4()
+        with self._engine.begin() as conn:
+            conn.execute(delete, dict(run))
+            conn.execute(insert_run, {**run, "sim_run_id": sim_run_id})
+            if results:
+                _execute_chunked(conn, insert_results, [{**r, "sim_run_id": sim_run_id} for r in results])
+        return sim_run_id
+
     def write_team_pridge(self, fit_run_id: uuid.UUID, model_version: str, rows: Sequence[Mapping[str, Any]]) -> int:
         """Upsert `team_pridge` rows."""
         if not rows:

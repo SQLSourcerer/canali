@@ -10,6 +10,7 @@ from datetime import date
 import numpy as np
 
 from sim.award_model import INSPIRE
+from sim.convergence import MIN_ITERATIONS, TOLERANCE
 from sim.event import EventField, EventModels, EventOutcome, EventProgress, Slots, simulate_event
 from sim.inputs import event_field, event_slots
 from sim.predictor import Entry, Predictor
@@ -70,6 +71,10 @@ class Season:
     qualifiers: tuple[SeasonEvent, ...]
     championship: SeasonEvent
     entry: Entry
+
+    def events_started(self, day: date) -> int:
+        """How many of the season's events start on or before ``day``."""
+        return sum(event.date <= day for event in (*self.qualifiers, self.championship))
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +156,67 @@ def read_season(
     if championship.capacity is not None and total > championship.capacity:
         raise ValueError(f"qualifiers advance {total} teams into a championship of {championship.capacity}")
     return Season(qualifiers, championship, entry)
+
+
+@dataclass(frozen=True, slots=True)
+class TeamSeason:
+    """One team's chances over the season.
+
+    Attributes:
+        p_attend_rcmp: Chance it plays the championship.
+        p_premier: Chance the championship sends it to a Premier event.
+        p_cmp: Chance the championship sends it to FIRST Championship.
+    """
+
+    p_attend_rcmp: float
+    p_premier: float
+    p_cmp: float
+
+
+@dataclass(frozen=True, slots=True)
+class SeasonSummary:
+    """A season's converged simulation.
+
+    Attributes:
+        iterations: Seasons played.
+        standard_error: The largest standard error among the teams' chances.
+        teams: Each team's chances, for every team in any of the season's fields.
+    """
+
+    iterations: int
+    standard_error: float
+    teams: dict[int, TeamSeason]
+
+
+def run_season(
+    season: Season,
+    pack: RulePack,
+    models: EventModels,
+    rng: np.random.Generator,
+    *,
+    tolerance: float = TOLERANCE,
+    min_iterations: int = MIN_ITERATIONS,
+    matches_per_team: int = MATCHES_PER_TEAM,
+) -> SeasonSummary:
+    """Play the season until the largest standard error among every team's chances is below ``tolerance``."""
+    teams = sorted({t for event in season.qualifiers for t in event.teams} | set(season.championship.field.predicted))
+    index = {t: i for i, t in enumerate(teams)}
+    counts = np.zeros((len(teams), 3), dtype=np.int64)
+    n = 0
+    while True:
+        outcome = simulate_season(season, pack, models, rng, matches_per_team=matches_per_team)
+        for column, group in enumerate((outcome.attended, outcome.premier, outcome.first_championship)):
+            counts[[index[t] for t in group if t in index], column] += 1
+        n += 1
+        p = counts / n
+        error = float(np.sqrt(np.max(p * (1.0 - p)) / n))
+        if n >= min_iterations and error < tolerance:
+            break
+    return SeasonSummary(
+        iterations=n,
+        standard_error=error,
+        teams={t: TeamSeason(*(float(x) for x in counts[i] / n)) for t, i in index.items()},
+    )
 
 
 def simulate_season(
