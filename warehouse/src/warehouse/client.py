@@ -902,6 +902,46 @@ class Warehouse:
             _execute_chunked(conn, stmt, payload)
         return len(payload)
 
+    def write_event_sim(self, run: Mapping[str, Any], results: Sequence[Mapping[str, Any]]) -> uuid.UUID:
+        """Write one event sim run and its per-team results, replacing any run at the same event, predictor, sim
+        version and match."""
+        delete = text(
+            """
+            DELETE FROM derived.event_sim_run
+            WHERE event_id = :event_id AND predictor = :predictor AND sim_version = :sim_version
+              AND as_of_match = :as_of_match
+            """
+        )
+        insert_run = text(
+            """
+            INSERT INTO derived.event_sim_run
+                (sim_run_id, event_id, predictor, sim_version, as_of_match, n_iterations, achieved_mcse,
+                 computed_at_utc)
+            VALUES (:sim_run_id, :event_id, :predictor, :sim_version, :as_of_match, :n_iterations, :achieved_mcse,
+                    now())
+            """
+        )
+        insert_results = text(
+            """
+            INSERT INTO derived.event_sim_result
+                (sim_run_id, team_number, p_attend, mean_rank, rank_probabilities, p_captain, p_selected, p_win,
+                 p_advance, p_advance_first_championship)
+            VALUES (:sim_run_id, :team_number, :p_attend, :mean_rank, CAST(:rank_probabilities AS jsonb), :p_captain,
+                    :p_selected, :p_win, :p_advance, :p_advance_first_championship)
+            """
+        )
+        sim_run_id = uuid.uuid4()
+        payload = [
+            {**r, "sim_run_id": sim_run_id, "rank_probabilities": _json_or_null(r.get("rank_probabilities"))}
+            for r in results
+        ]
+        with self._engine.begin() as conn:
+            conn.execute(delete, dict(run))
+            conn.execute(insert_run, {**run, "sim_run_id": sim_run_id})
+            if payload:
+                _execute_chunked(conn, insert_results, payload)
+        return sim_run_id
+
     def write_team_pridge(self, fit_run_id: uuid.UUID, model_version: str, rows: Sequence[Mapping[str, Any]]) -> int:
         """Upsert `team_pridge` rows."""
         if not rows:
@@ -921,6 +961,11 @@ class Warehouse:
         with self._engine.begin() as conn:
             _execute_chunked(conn, stmt, payload)
         return len(payload)
+
+
+def _json_or_null(value: Any) -> str | None:
+    """JSON text, or SQL NULL in place of JSON ``null``."""
+    return None if value is None else json.dumps(value)
 
 
 def _execute_chunked(conn: Connection, stmt: Any, payload: Sequence[Mapping[str, Any]]) -> None:
