@@ -15,7 +15,8 @@ from datetime import date
 import numpy as np
 import numpy.typing as npt
 
-from sim.pick_model import PICK_FEATURES, PickField, PickModel, fit_coefficients
+from sim.conditional_logit import fit_coefficients
+from sim.pick_model import PICK_FEATURES, PickField, PickModel
 from sim.predictor import Predictor
 from warehouse.client import AlliancePickRow, EventRow, MatchRow, TeamSeasonRow, Warehouse
 from warehouse.tier import tier_for

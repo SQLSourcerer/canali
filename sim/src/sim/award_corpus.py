@@ -17,8 +17,12 @@ from sim.award_model import (
     INSPIRE,
     INSPIRE_PLACED,
     MODELLED_AWARDS,
+    TIER_SPLIT_AWARDS,
     AwardField,
+    AwardModel,
+    term_columns,
 )
+from sim.conditional_logit import fit_coefficients
 from sim.predictor import Predictor
 from warehouse.client import AwardRow, EventRow, Warehouse
 from warehouse.tier import EventTier, tier_for
@@ -132,6 +136,31 @@ def award_decisions(warehouse: Warehouse, season: int, predictor: Predictor) -> 
             event, stage, season, by_event[event.event_id], field=award_field, inspire_won_before=inspire_won_before
         )
     return decisions
+
+
+def measure_award_models(warehouse: Warehouse, seasons: Sequence[int], predictor: Predictor) -> list[AwardModel]:
+    """One model per modelled award, or per award and tier for ``TIER_SPLIT_AWARDS``, fitted on every first place of
+    ``seasons`` pooled."""
+    winners = [d for s in seasons for d in award_decisions(warehouse, s, predictor) if d.place == 1]
+    models: list[AwardModel] = []
+    for award in MODELLED_AWARDS:
+        stages: tuple[EventTier | None, ...] = STAGES if award in TIER_SPLIT_AWARDS else (None,)
+        for stage in stages:
+            fitted = [d for d in winners if d.award == award and stage in {d.stage, None}]
+            if not fitted:
+                continue
+            columns = term_columns(award)
+            coefficients = fit_coefficients([d.features[:, columns] for d in fitted], [d.chosen for d in fitted])
+            models.append(
+                AwardModel(
+                    award,
+                    tuple(float(c) for c in coefficients),
+                    stage=stage,
+                    decisions=len(fitted),
+                    seasons=tuple(sorted({d.season for d in fitted})),
+                )
+            )
+    return models
 
 
 def _history(

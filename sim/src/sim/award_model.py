@@ -8,6 +8,9 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
+from sim.conditional_logit import choice_probabilities
+from warehouse.tier import EventTier
+
 Floats = npt.NDArray[np.float64]
 
 AWARD_NAMES: Mapping[int, str] = {
@@ -30,6 +33,9 @@ TEAM_ATTRIBUTE_AWARDS = frozenset({"Connect", "Think", "JudgesChoice", "Reach", 
 
 INSPIRE_PLACED = "InspirePlaced"
 
+# Awards fitted per tier; every other award has one model across tiers.
+TIER_SPLIT_AWARDS = frozenset({INSPIRE})
+
 HISTORY_DECAY = 0.6
 
 AWARD_TRAITS = (
@@ -46,6 +52,66 @@ AWARD_TRAITS = (
     "first_pick",
     "seed_score",
 )
+
+_SELECTION = ("team_age", "rookie", "captain", "first_pick", "seed_score")
+AWARD_TERMS: Mapping[str, tuple[str, ...]] = {
+    "Inspire": ("predictor_z", "predictor_auto_z", "inspire_history", "other_history", *_SELECTION),
+    "Think": ("predictor_z", "inspire_history", "own_history", "other_history", *_SELECTION),
+    "Connect": ("inspire_history", "own_history", "other_history", *_SELECTION),
+    "Reach": ("team_attribute_history", "other_history", *_SELECTION),
+    "Sustain": ("team_attribute_history", "other_history", *_SELECTION),
+    "Design": ("predictor_z", "machine_history", "own_history", "inspire_history", *_SELECTION),
+    "Innovate": ("predictor_z", "machine_history", "own_history", "inspire_history", *_SELECTION),
+    "Control": (
+        "predictor_z",
+        "predictor_auto_z",
+        "machine_history",
+        "own_history",
+        "inspire_history",
+        *_SELECTION,
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class AwardModel:
+    """How much each trait raises a team's chance of an award.
+
+    Attributes:
+        award: The award's name.
+        coefficients: The weight on each of the award's ``AWARD_TERMS``.
+        stage: The tier the model is for, or None for every tier.
+        decisions: Winners the model was fitted on.
+        seasons: Seasons the winners came from.
+    """
+
+    award: str
+    coefficients: tuple[float, ...]
+    stage: EventTier | None = None
+    decisions: int = 0
+    seasons: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        terms = AWARD_TERMS[self.award]
+        if len(self.coefficients) != len(terms):
+            raise ValueError(f"{self.award}: {len(self.coefficients)} coefficients for {len(terms)} terms")
+
+    def probabilities(self, features: Floats) -> Floats:
+        """Each candidate's chance of the award, from features in ``AWARD_TRAITS`` order."""
+        return choice_probabilities(np.asarray(features)[:, term_columns(self.award)], self.coefficients)
+
+
+def model_for(models: Sequence[AwardModel], award: str, stage: EventTier) -> AwardModel:
+    """The model for ``award`` at ``stage``, its tier's own if it has one."""
+    fitted = [m for m in models if m.award == award and m.stage in {stage, None}]
+    if not fitted:
+        raise KeyError(f"no {award} model for {stage.name}")
+    return min(fitted, key=lambda m: m.stage is None)
+
+
+def term_columns(award: str) -> list[int]:
+    """Where each of the award's terms sits in ``AWARD_TRAITS``."""
+    return [AWARD_TRAITS.index(t) for t in AWARD_TERMS[award]]
 
 
 @dataclass(frozen=True, slots=True)
