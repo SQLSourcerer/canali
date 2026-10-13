@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -79,6 +79,7 @@ class SeasonRun:
     partition: ResolvedPartition
     report: PartitionReport
     season_scale: Scale | None
+    init_scale: Scale
     result: ReplayResult
 
 
@@ -152,8 +153,9 @@ def run_season(
     constants_override: SeasonConstants | None = None,
     data: SeasonData | None = None,
     compute_norm: bool = True,
+    listed: Iterable[int] = (),
 ) -> SeasonRun:
-    """Prepare, verify and replay one season."""
+    """Prepare, verify and replay one season, with a season-start row for every ``listed`` team."""
 
     loaded = data or load_season(warehouse, season, strict=strict)
     constants = constants_override or for_season(season)
@@ -172,9 +174,15 @@ def run_season(
         breakdowns=loaded.breakdowns,
         event_ordinals=loaded.ordinals,
         compute_norm=compute_norm,
+        listed=listed,
     )
     return SeasonRun(
-        season=season, partition=loaded.partition, report=loaded.report, season_scale=season_scale, result=result
+        season=season,
+        partition=loaded.partition,
+        report=loaded.report,
+        season_scale=season_scale,
+        init_scale=init_scale,
+        result=result,
     )
 
 

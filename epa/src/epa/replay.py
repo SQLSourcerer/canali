@@ -256,6 +256,7 @@ def replay_season(
     event_ordinals: Mapping[uuid.UUID, int] | None = None,
     seed: Mapping[int, TeamSeed] | None = None,
     compute_norm: bool = True,
+    listed: Iterable[int] = (),
 ) -> ReplayResult:
     """Replay one season, returning every row it produced.
 
@@ -344,4 +345,13 @@ def replay_season(
     close_event()
     result.teams = len(state)
     apply_norm_map(result, {team: st.total for team, st in state.items()} if compute_norm else {})
+    for team_number in sorted(set(listed) - set(state) - set(seeded)):
+        init = carry_forward(
+            previous_norm=previous.get(team_number),
+            second_norm=second.get(team_number),
+            carryover=carryover,
+            init_scale=init_scale,
+        )
+        unseen = TeamState(team_number=team_number, series=_initial_series(init, partition))
+        result.rows.append(row(unseen, TAG_SEASON_START, None, None))
     return result

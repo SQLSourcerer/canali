@@ -23,7 +23,7 @@ FROM derived.team_epa;
 -- Completed batch runs. A run appears once it finishes, and a live event-scope run is not published here.
 CREATE VIEW pub.v_fit_run AS
 SELECT f.model, f.season, f.model_version, f.prior_version, f.fit_run_id,
-       f.started_at_utc, f.finished_at_utc
+       f.started_at_utc, f.finished_at_utc, f.notes
 FROM derived.fit_run f
 WHERE f.event_id IS NULL AND f.finished_at_utc IS NOT NULL;
 

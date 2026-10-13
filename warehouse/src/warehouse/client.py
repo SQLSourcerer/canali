@@ -182,6 +182,15 @@ class PreMatchRatingRow:
 
 
 @dataclass(frozen=True, slots=True)
+class EntryEpaRow:
+    """A team's rating as it left its latest event, or at the season's start before one, and when it last played."""
+
+    team_number: int
+    components: dict[str, float]
+    last_played: date | None
+
+
+@dataclass(frozen=True, slots=True)
 class PreEventEpaRow:
     """Beta-zero: what a team carried into an event."""
 
@@ -681,6 +690,37 @@ class Warehouse:
                 sql, {"model": model, "season": season, "version": model_version, "prior": prior_version}
             ).scalar()
         return None if found is None else uuid.UUID(str(found))
+
+    def fit_run_notes(self, fit_run_id: uuid.UUID) -> dict[str, Any]:
+        """What a completed batch run recorded about itself."""
+        sql = text("SELECT notes FROM pub.v_fit_run WHERE fit_run_id = :run")
+        with self._engine.connect() as conn:
+            notes = conn.execute(sql, {"run": str(fit_run_id)}).scalar()
+        return dict(notes or {})
+
+    def entry_epa(
+        self, fit_run_id: uuid.UUID, *, teams: Sequence[int], before_ordinal: int | None = None
+    ) -> dict[int, EntryEpaRow]:
+        """Each team's latest post-event rating in one run before ``before_ordinal``, or the whole season when None,
+        else its season-start rating."""
+        sql = text(
+            """
+            SELECT DISTINCT ON (t.team_number) t.team_number, t.tag, t.components, s.date_start
+            FROM pub.v_team_epa t
+            LEFT JOIN pub.v_event_sequence s ON s.event_id = t.event_id
+            WHERE t.fit_run_id = :run AND t.team_number = ANY(:teams)
+              AND (t.tag = 'season_start'
+                   OR (t.tag = 'post_event' AND (CAST(:before AS integer) IS NULL OR s.event_ordinal < :before)))
+            ORDER BY t.team_number, t.tag = 'post_event' DESC, s.event_ordinal DESC
+            """
+        )
+        with self._engine.connect() as conn:
+            return {
+                r.team_number: EntryEpaRow(
+                    r.team_number, dict(r.components or {}), r.date_start if r.tag == "post_event" else None
+                )
+                for r in conn.execute(sql, {"run": str(fit_run_id), "teams": list(teams), "before": before_ordinal})
+            }
 
     def carried_epa(
         self,
