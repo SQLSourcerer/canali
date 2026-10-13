@@ -87,8 +87,20 @@ BRACKETS: Mapping[int, Bracket] = {
 }
 
 
-def _decide(red: int, blue: int, alliances: Sequence[Alliance], play: PlayMatch, rng: np.random.Generator) -> bool:
-    """True when red wins."""
+def _decide(
+    red: int,
+    blue: int,
+    alliances: Sequence[Alliance],
+    play: PlayMatch,
+    rng: np.random.Generator,
+    *,
+    published: int | None,
+) -> bool:
+    """True when red wins; ``published`` is the winning seed when the match has been played."""
+    if published is not None:
+        if published not in (red, blue):
+            raise ValueError(f"alliance {published} won a match between alliances {red} and {blue}")
+        return published == red
     for _ in range(MAX_REPLAYS):
         red_score, blue_score = play(alliances[red - 1], alliances[blue - 1], rng)
         if red_score != blue_score:
@@ -97,9 +109,20 @@ def _decide(red: int, blue: int, alliances: Sequence[Alliance], play: PlayMatch,
 
 
 def playoff(
-    structure: Structure, alliances: Sequence[Alliance], play: PlayMatch, rng: np.random.Generator
+    structure: Structure,
+    alliances: Sequence[Alliance],
+    play: PlayMatch,
+    rng: np.random.Generator,
+    *,
+    decided: Mapping[tuple[int, int], int] | None = None,
 ) -> tuple[int, ...]:
-    """Play the bracket; returns each alliance's finishing place, in seed order."""
+    """Play the bracket; returns each alliance's finishing place, in seed order.
+
+    ``decided`` holds the winning seed of each result already played, keyed by series and the result's place among
+    the series' decisive games, ties not counted. Bracket match ``n`` is series ``n``, the final the series after the
+    last, a second final the one after that, and a best of three is series 1.
+    """
+    decided = decided or {}
     if not structure.playoff_implemented or structure.playoff_structure != DOUBLE_ELIMINATION:
         raise NotImplementedError(f"playoff structure {structure.playoff_structure!r} is not implemented")
     bracket = BRACKETS.get(len(alliances))
@@ -109,19 +132,21 @@ def playoff(
     seed: dict[str, int] = {f"A{s}": s for s in range(1, len(alliances) + 1)}
     for n, (red_ref, blue_ref) in enumerate(bracket.matches, start=1):
         red, blue = seed[red_ref], seed[blue_ref]
-        red_won = _decide(red, blue, alliances, play, rng)
+        red_won = _decide(red, blue, alliances, play, rng, published=decided.get((n, 1)))
         seed[f"W{n}"], seed[f"L{n}"] = (red, blue) if red_won else (blue, red)
 
     red, blue = seed[bracket.final[0]], seed[bracket.final[1]]
+    final = len(bracket.matches) + 1
     if bracket.final_format == "best_of_three":
         wins = {red: 0, blue: 0}
         while max(wins.values()) < 2:
-            wins[red if _decide(red, blue, alliances, play, rng) else blue] += 1
+            game = sum(wins.values()) + 1
+            wins[red if _decide(red, blue, alliances, play, rng, published=decided.get((final, game))) else blue] += 1
         champion = red if wins[red] == 2 else blue
-    elif _decide(red, blue, alliances, play, rng):
+    elif _decide(red, blue, alliances, play, rng, published=decided.get((final, 1))):
         champion = red
     else:
-        champion = red if _decide(red, blue, alliances, play, rng) else blue
+        champion = red if _decide(red, blue, alliances, play, rng, published=decided.get((final + 1, 1))) else blue
 
     places = {champion: 1, (blue if champion == red else red): 2}
     places |= {seed[ref]: place for ref, place in bracket.places.items()}

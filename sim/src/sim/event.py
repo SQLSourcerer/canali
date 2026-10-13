@@ -79,6 +79,44 @@ class Slots:
 
 
 @dataclass(frozen=True, slots=True)
+class EventProgress:
+    """What an event has published so far.
+
+    Attributes:
+        played: Qualification matches already played, shaped ``(match,)``.
+        results: Their results, shaped as the schedule's; rows of unplayed matches are ignored.
+        alliances: Playoff alliances in seed order, captain first, or None before selection.
+        decided: The winning seed of each playoff match played, keyed as ``playoff`` takes it,
+            or None before the playoff.
+    """
+
+    played: npt.NDArray[np.bool_]
+    results: MatchResults
+    alliances: Sequence[Alliance] | None = None
+    decided: Mapping[tuple[int, int], int] | None = None
+
+    def merged(self, drawn: MatchResults) -> MatchResults:
+        """``drawn`` with every played match replaced by its published result."""
+        if self.played.shape != drawn.score.shape[:1]:
+            raise ValueError(f"{self.played.shape[0]} matches published, {drawn.score.shape[0]} drawn")
+        missing = sorted(
+            (set(drawn.bonus) - set(self.results.bonus)) | (set(drawn.components) - set(self.results.components))
+        )
+        if missing:
+            raise ValueError(f"published results lack {missing}")
+        played = self.played[:, None]
+        dq = None
+        if self.results.dq is not None:
+            dq = np.where(played[..., None], self.results.dq, False if drawn.dq is None else drawn.dq)
+        return MatchResults(
+            score=np.where(played, self.results.score, drawn.score),
+            bonus={k: np.where(played, self.results.bonus[k], v) for k, v in drawn.bonus.items()},
+            components={k: np.where(played, self.results.components[k], v) for k, v in drawn.components.items()},
+            dq=dq,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class EventModels:
     """The models an event is played with."""
 
@@ -118,38 +156,45 @@ def simulate_event(
     rng: np.random.Generator,
     *,
     slots: Slots | None = None,
+    progress: EventProgress | None = None,
 ) -> EventOutcome:
-    """Play the event once on ``schedule``, every team of which ``field`` must predict."""
+    """Play the event once on ``schedule``, every team of which ``field`` must predict, keeping the matches
+    ``progress`` has already played."""
     advancement = pack.structure.advancement_points
     if advancement is None:
         raise ValueError(f"{pack.season}: the pack has no advancement points")
 
     results = draw_matches(models.season, pack, _alliance_predictions(field, schedule), field.event_type, rng)
+    if progress is not None:
+        results = progress.merged(results)
     ranked = standings(schedule, results, RankingRules.from_pack(pack), rng)
     teams = tuple(int(t) for t in ranked.teams)
     rating = np.array([field.rating(t) for t in teams])
 
-    alliances = select_alliances(
-        PickField(
-            teams=teams,
-            rating=rating,
-            partners=_match_mates(schedule),
-            allied=field.allied,
-            city=field.city,
-            team_age=field.team_age,
-        ),
-        models.pick,
-        alliance_count(pack.structure, len(teams)),
-        alliance_size(field.event_type),
-        rng,
-    )
+    if progress is not None and progress.alliances is not None:
+        alliances = list(progress.alliances)
+    else:
+        alliances = select_alliances(
+            PickField(
+                teams=teams,
+                rating=rating,
+                partners=_match_mates(schedule),
+                allied=field.allied,
+                city=field.city,
+                team_age=field.team_age,
+            ),
+            models.pick,
+            alliance_count(pack.structure, len(teams)),
+            alliance_size(field.event_type),
+            rng,
+        )
 
     def play(red: Alliance, blue: Alliance, rng: np.random.Generator) -> tuple[float, float]:
         total = np.array([[sum(map(field.rating, _on_field(field, a))) for a in (red, blue)]])
         score = models.season.score.sample(total, rng) + models.season.score.foul_points(total.shape, rng)
         return float(score[0, 0]), float(score[0, 1])
 
-    places = playoff(pack.structure, alliances, play, rng)
+    places = playoff(pack.structure, alliances, play, rng, decided=None if progress is None else progress.decided)
 
     stage = tier_for(field.event_type)
     awards: dict[str, tuple[int, ...]] = {}

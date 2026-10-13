@@ -101,6 +101,26 @@ class AllianceSlotRow:
 
 
 @dataclass(frozen=True, slots=True)
+class ScheduledMatchRow:
+    """One match as scheduled, red first then blue, with its result once played.
+
+    Attributes:
+        teams: Each alliance's teams in station order.
+        surrogate: True where the appearance is a surrogate's, shaped like ``teams``.
+        dq: True where the appearance was disqualified, shaped like ``teams``.
+        score: Each alliance's final score, None until the match is played.
+    """
+
+    match_id: uuid.UUID
+    series: int
+    match_number: int
+    teams: tuple[tuple[int, ...], tuple[int, ...]]
+    surrogate: tuple[tuple[bool, ...], tuple[bool, ...]]
+    dq: tuple[tuple[bool, ...], tuple[bool, ...]]
+    score: tuple[float, float] | None
+
+
+@dataclass(frozen=True, slots=True)
 class EventAdvancementRow:
     """Where an event's advancement slots go and how many."""
 
@@ -282,6 +302,42 @@ class Warehouse:
         with self._engine.connect() as conn:
             return [_match_row(r) for r in conn.execute(sql, {"season": season, "levels": list(levels)}).mappings()]
 
+    def event_schedule(self, event_id: uuid.UUID, *, level: str = "QUALIFICATION") -> list[ScheduledMatchRow]:
+        """One event's schedule at ``level`` in series and match order, unplayed matches included."""
+        sql = text(
+            """
+            SELECT m.match_id, m.series, m.match_number, m.score_red_final, m.score_blue_final,
+                   t.alliance, t.team_number, t.surrogate, t.dq
+            FROM pub.v_match m
+            JOIN pub.v_match_team t ON t.match_id = m.match_id
+            WHERE m.event_id = :event AND m.level = :level
+            ORDER BY m.series, m.match_number, t.station
+            """
+        )
+        stations: dict[uuid.UUID, dict[str, list[Any]]] = {}
+        heads: dict[uuid.UUID, Any] = {}
+        with self._engine.connect() as conn:
+            for r in conn.execute(sql, {"event": event_id, "level": level}):
+                match_id = uuid.UUID(str(r.match_id))
+                heads.setdefault(match_id, r)
+                stations.setdefault(match_id, {"RED": [], "BLUE": []})[str(r.alliance)].append(r)
+        rows = []
+        for match_id, head in heads.items():
+            red, blue = stations[match_id]["RED"], stations[match_id]["BLUE"]
+            played = head.score_red_final is not None and head.score_blue_final is not None
+            rows.append(
+                ScheduledMatchRow(
+                    match_id=match_id,
+                    series=head.series,
+                    match_number=head.match_number,
+                    teams=(tuple(r.team_number for r in red), tuple(r.team_number for r in blue)),
+                    surrogate=(tuple(r.surrogate for r in red), tuple(r.surrogate for r in blue)),
+                    dq=(tuple(r.dq for r in red), tuple(r.dq for r in blue)),
+                    score=(float(head.score_red_final), float(head.score_blue_final)) if played else None,
+                )
+            )
+        return rows
+
     def alliance_picks(self, season: int) -> list[AlliancePickRow]:
         """A season's alliance selections, each event's in the order it happened."""
         sql = text(
@@ -326,6 +382,21 @@ class Warehouse:
                 AllianceSlotRow(uuid.UUID(str(r.event_id)), r.seed, r.team_number, r.role)
                 for r in conn.execute(sql, {"season": season})
             ]
+
+    def event_alliances(self, event_id: uuid.UUID) -> list[tuple[int, ...]]:
+        """One event's playoff alliances in seed order, captain first, then picks in the order they were made."""
+        sql = text(
+            """
+            SELECT seed, team_number FROM pub.v_alliance_selection
+            WHERE event_id = :event
+            ORDER BY seed, CASE role WHEN 'captain' THEN 0 WHEN 'round1' THEN 1 ELSE 2 END
+            """
+        )
+        seats: dict[int, list[int]] = {}
+        with self._engine.connect() as conn:
+            for r in conn.execute(sql, {"event": event_id}):
+                seats.setdefault(r.seed, []).append(r.team_number)
+        return [tuple(seats[seed]) for seed in sorted(seats)]
 
     def event_advancement(self, season: int) -> dict[uuid.UUID, EventAdvancementRow]:
         """A season's published advancement slots, by event."""
