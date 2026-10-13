@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import numpy as np
@@ -11,6 +12,7 @@ from sim.convergence import TOLERANCE
 from sim.inputs import event_field, event_models, event_slots
 from sim.predictor import predictor_for
 from sim.progress import published_event
+from sim.rosters import Rosters
 from sim.runner import EventSummary, fixed_field, generated_field, run_event
 from sim.writer import write_event_summary
 from warehouse.client import EventRow, Warehouse
@@ -49,6 +51,7 @@ def event(
     predictor: PREDICTOR,
     through: Annotated[int | None, typer.Option(help="Simulate from this match ordinal, not the latest")] = None,
     teams: Annotated[str | None, typer.Option(help="Comma-separated field, for an event with no schedule")] = None,
+    rosters: Annotated[Path | None, typer.Option(help="A season's roster file, for an event with no schedule")] = None,
     matches_per_team: Annotated[int, typer.Option(help="Qualification matches per team in a generated schedule")] = 5,
     tolerance: Annotated[float, typer.Option(help="Largest standard error the run stops at")] = TOLERANCE,
     seed: Annotated[int | None, typer.Option(help="Random seed")] = None,
@@ -67,11 +70,9 @@ def event(
         row = _event(warehouse, season, event_code)
         published = published_event(warehouse, row.event_id, pack, chosen, through=through)
         if published.schedule is None:
-            if teams is None:
-                raise typer.BadParameter(f"{event_code} has no schedule; name its field", param_hint="--teams")
-            field_teams = [int(t) for t in teams.split(",") if t.strip()]
-        elif teams is not None:
-            raise typer.BadParameter(f"{event_code}'s schedule sets its field", param_hint="--teams")
+            field_teams = _unscheduled_field(season, event_code, teams, rosters)
+        elif teams is not None or rosters is not None:
+            raise typer.BadParameter(f"{event_code}'s schedule sets its field", param_hint="--teams/--rosters")
         else:
             field_teams = sorted({int(t) for t in np.unique(published.schedule.stations)})
         field = event_field(warehouse, row, field_teams, published.ratings)
@@ -89,6 +90,19 @@ def event(
         if write:
             sim_run_id = write_event_summary(warehouse, row.event_id, chosen.version, published.as_of_match, summary)
             _echo(f"        sim_run {sim_run_id}")
+
+
+def _unscheduled_field(season: int, event_code: str, teams: str | None, rosters: Path | None) -> list[int]:
+    """The field named by ``--teams`` or found in a ``--rosters`` file."""
+    if (teams is None) == (rosters is None):
+        raise typer.BadParameter(f"{event_code} has no schedule; name its field once", param_hint="--teams/--rosters")
+    if teams is not None:
+        return [int(t) for t in teams.split(",") if t.strip()]
+    assert rosters is not None
+    sample = Rosters.from_file(rosters)
+    if sample.season != season or event_code not in sample.events:
+        raise typer.BadParameter(f"{rosters} has no {season} roster for {event_code}", param_hint="--rosters")
+    return sample.events[event_code]
 
 
 def _report(event_code: str, as_of_match: int, summary: EventSummary) -> None:

@@ -6,7 +6,6 @@ import json
 import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Connection, delete, insert
@@ -40,7 +39,6 @@ class Event(BaseModel):
 class Snapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    format: Literal[1]
     region: str
     season: int
     as_of: datetime
@@ -48,8 +46,8 @@ class Snapshot(BaseModel):
 
 
 def snapshot_files(paths: list[Path]) -> list[Path]:
-    """The JSON files named, and every one under a named directory."""
-    return sorted({f for p in paths for f in (p.rglob("*.json") if p.is_dir() else [p])})
+    """The files named, and every ``registration-*.json`` under a named directory."""
+    return sorted({f for p in paths for f in (p.rglob("registration-*.json") if p.is_dir() else [p])})
 
 
 def load_file(conn: Connection, path: Path) -> tuple[Snapshot, uuid.UUID]:
