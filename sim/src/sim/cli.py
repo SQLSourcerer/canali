@@ -10,11 +10,11 @@ import numpy as np
 import typer
 
 from sim.convergence import TOLERANCE
-from sim.inputs import event_field, event_models, event_slots
+from sim.inputs import event_models
+from sim.pipeline import simulate_published_event
 from sim.predictor import predictor_for
-from sim.progress import published_event
 from sim.rosters import Rosters
-from sim.runner import EventSummary, fixed_field, generated_field, run_event
+from sim.runner import EventSummary
 from sim.season import read_season, run_season
 from sim.writer import write_event_summary, write_season_summary
 from warehouse.client import EventRow, Warehouse
@@ -68,27 +68,25 @@ def event(
     except ValueError as e:
         raise typer.BadParameter(str(e), param_hint="--predictor") from e
 
+    field_teams = _named_field(season, event_code, teams, rosters)
+    roster = None if rosters is None else Rosters.from_file(rosters).events.get(event_code)
     with Warehouse() as warehouse:
         row = _event(warehouse, season, event_code)
-        published = published_event(warehouse, row.event_id, pack, chosen, through=through)
-        if published.schedule is None:
-            field_teams = _unscheduled_field(season, event_code, teams, rosters)
-        elif teams is not None or rosters is not None:
-            raise typer.BadParameter(f"{event_code}'s schedule sets its field", param_hint="--teams/--rosters")
-        else:
-            field_teams = sorted({int(t) for t in np.unique(published.schedule.stations)})
-        field = event_field(warehouse, row, field_teams, published.ratings)
-        roster = None if rosters is None else Rosters.from_file(rosters).events.get(event_code)
-        slots = event_slots(warehouse, row, roster)
-        models = event_models(warehouse, row, chosen)
-
-        draw = (
-            generated_field(field, field_teams, matches_per_team)
-            if published.schedule is None
-            else fixed_field(field, published.schedule)
-        )
-        rng = np.random.default_rng(seed)
-        summary = run_event(draw, pack, models, rng, slots=slots, progress=published.progress, tolerance=tolerance)
+        try:
+            published, summary = simulate_published_event(
+                warehouse,
+                row,
+                pack,
+                chosen,
+                np.random.default_rng(seed),
+                through=through,
+                teams=field_teams,
+                roster=roster,
+                matches_per_team=matches_per_team,
+                tolerance=tolerance,
+            )
+        except ValueError as e:
+            raise typer.BadParameter(str(e), param_hint="--teams/--rosters") from e
         _report(event_code, published.as_of_match, summary)
         if write:
             sim_run_id = write_event_summary(warehouse, row.event_id, chosen.version, published.as_of_match, summary)
@@ -146,13 +144,14 @@ def season(
             _echo(f"        sim_run {sim_run_id}")
 
 
-def _unscheduled_field(season: int, event_code: str, teams: str | None, rosters: Path | None) -> list[int]:
-    """The field named by ``--teams`` or found in a ``--rosters`` file."""
-    if (teams is None) == (rosters is None):
-        raise typer.BadParameter(f"{event_code} has no schedule; name its field once", param_hint="--teams/--rosters")
+def _named_field(season: int, event_code: str, teams: str | None, rosters: Path | None) -> list[int] | None:
+    """The field named by ``--teams`` or found in a ``--rosters`` file, None when neither names one."""
+    if teams is not None and rosters is not None:
+        raise typer.BadParameter("name the field once", param_hint="--teams/--rosters")
     if teams is not None:
         return [int(t) for t in teams.split(",") if t.strip()]
-    assert rosters is not None
+    if rosters is None:
+        return None
     sample = Rosters.from_file(rosters)
     event = sample.events.get(event_code)
     if sample.season != season or event is None or event.teams is None:

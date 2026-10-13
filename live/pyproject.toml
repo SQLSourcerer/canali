@@ -8,6 +8,8 @@ dependencies = [
     "epa",
     "pridge",
     "sim",
+    "numpy>=2.1",
+    "structlog>=24.4",
 ]
 
 [build-system]

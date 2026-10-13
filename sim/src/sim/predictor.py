@@ -82,7 +82,7 @@ class EpaEntry:
 
 @dataclass(frozen=True, slots=True)
 class EpaPredictor:
-    """EPA at one model version, read from its season batch runs."""
+    """EPA at one model version."""
 
     epa_version: str
 
@@ -103,7 +103,7 @@ class EpaPredictor:
     def event_ratings(
         self, warehouse: Warehouse, season: int, event_id: uuid.UUID, *, through: int
     ) -> dict[int, dict[str, float]]:
-        run = self._run(warehouse, season)
+        run = warehouse.live_fit_run(EPA_MODEL, event_id, self.epa_version) or self._run(warehouse, season)
         return {} if run is None else warehouse.event_epa(run, event_id, through=through)
 
     def season_entry(

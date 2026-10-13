@@ -709,6 +709,24 @@ class Warehouse:
             ).scalar()
         return None if found is None else uuid.UUID(str(found))
 
+    def live_fit_run(
+        self, model: str, event_id: uuid.UUID, model_version: str, *, prior_version: str | None = None
+    ) -> uuid.UUID | None:
+        """The completed live run for one model, event, version and prior version, if the event has one."""
+        sql = text(
+            """
+            SELECT fit_run_id FROM pub.v_live_fit_run
+            WHERE model = :model AND event_id = :event AND model_version = :version
+              AND prior_version IS NOT DISTINCT FROM :prior
+            ORDER BY finished_at_utc DESC LIMIT 1
+            """
+        )
+        with self._engine.connect() as conn:
+            found = conn.execute(
+                sql, {"model": model, "event": event_id, "version": model_version, "prior": prior_version}
+            ).scalar()
+        return None if found is None else uuid.UUID(str(found))
+
     def fit_run_notes(self, fit_run_id: uuid.UUID) -> dict[str, Any]:
         """What a completed batch run recorded about itself."""
         sql = text("SELECT notes FROM pub.v_fit_run WHERE fit_run_id = :run")

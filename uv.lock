@@ -592,16 +592,20 @@ version = "1.0.0"
 source = { editable = "live" }
 dependencies = [
     { name = "epa" },
+    { name = "numpy" },
     { name = "pridge" },
     { name = "sim" },
+    { name = "structlog" },
     { name = "warehouse" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "epa", editable = "epa" },
+    { name = "numpy", specifier = ">=2.1" },
     { name = "pridge", editable = "pridge" },
     { name = "sim", editable = "sim" },
+    { name = "structlog", specifier = ">=24.4" },
     { name = "warehouse", editable = "warehouse" },
 ]
 

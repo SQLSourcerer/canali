@@ -27,6 +27,13 @@ SELECT f.model, f.season, f.model_version, f.prior_version, f.fit_run_id,
 FROM derived.fit_run f
 WHERE f.event_id IS NULL AND f.finished_at_utc IS NOT NULL;
 
+-- Completed live runs, one per event, model, version and prior version.
+CREATE VIEW pub.v_live_fit_run AS
+SELECT f.model, f.season, f.event_id, f.model_version, f.prior_version, f.fit_run_id,
+       f.started_at_utc, f.finished_at_utc
+FROM derived.fit_run f
+WHERE f.event_id IS NOT NULL AND f.finished_at_utc IS NOT NULL;
+
 CREATE VIEW pub.v_team_epa_pre_event AS
 SELECT t.season, t.event_id, s.event_ordinal, t.team_number, t.model_version,
        t.epa_scaled, t.epa_norm, t.scale_provisional, t.components, t.fit_run_id
