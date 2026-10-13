@@ -119,7 +119,6 @@ def award_decisions(warehouse: Warehouse, season: int, predictor: Predictor) -> 
             rating=np.array([sum(c.values()) for c in components]),
             auto_rating=np.array([sum(v for k, v in c.items() if k.startswith(AUTO_PREFIX)) for c in components]),
             history=_history(by_team, field, season, event.date_start),
-            team_age={t: float(season - r) for t in field if t in teams and (r := teams[t].rookie_year) is not None},
             rookie=frozenset(t for t in field if t in teams and teams[t].rookie_year == season),
             alliances=[
                 tuple(t for _, t in sorted(members, key=lambda m: role_order[m[0]]))

@@ -46,14 +46,13 @@ AWARD_TRAITS = (
     "machine_history",
     "team_attribute_history",
     "inspire_history",
-    "team_age",
     "rookie",
     "captain",
     "first_pick",
     "seed_score",
 )
 
-_SELECTION = ("team_age", "rookie", "captain", "first_pick", "seed_score")
+_SELECTION = ("rookie", "captain", "first_pick", "seed_score")
 AWARD_TERMS: Mapping[str, tuple[str, ...]] = {
     "Inspire": ("predictor_z", "predictor_auto_z", "inspire_history", "other_history", *_SELECTION),
     "Think": ("predictor_z", "inspire_history", "own_history", "other_history", *_SELECTION),
@@ -123,7 +122,6 @@ class AwardField:
         rating: Each team's predicted points once qualification is over.
         auto_rating: The autonomous part of ``rating``.
         history: Each team's decayed first places per award, and Inspire placings under ``INSPIRE_PLACED``.
-        team_age: Each team's seasons since its rookie year.
         rookie: Teams in their rookie season.
         alliances: Playoff alliances in seed order, captain first.
     """
@@ -132,7 +130,6 @@ class AwardField:
     rating: Floats
     auto_rating: Floats
     history: Mapping[int, Mapping[str, float]]
-    team_age: Mapping[int, float]
     rookie: frozenset[int]
     alliances: Sequence[tuple[int, ...]]
 
@@ -159,7 +156,6 @@ class AwardField:
                     sum(h.get(a, 0.0) for a in MACHINE_AWARDS - {award}),
                     sum(h.get(a, 0.0) for a in TEAM_ATTRIBUTE_AWARDS - {award}),
                     h.get(INSPIRE_PLACED, 0.0),
-                    self.team_age.get(t, 0.0),
                     float(t in self.rookie),
                     float(slot == 0),
                     float(slot == 1),
