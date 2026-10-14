@@ -7,6 +7,8 @@ An FTC robotics statistics stack: raw data collected from external APIs; all der
 | [`warehouse/`](warehouse/README.md) | API ingest, storage, and provider of in-house statistics |
 | [`epa/`](epa/README.md) | Event-sequential expected points added. An Elo-style model based on [Statbotics](https://www.statbotics.io/)' methodology for FRC |
 | [`pridge/`](pridge/README.md) | Ridge regression regularized toward pre-event EPA, based on work by [Gabriel Krotkov and FRC 449](https://www.chiefdelphi.com/t/introducing-prior-ridge-regularization-for-frc-rating/519531) |
+| [`sim/`](sim/README.md) | Monte Carlo simulation of an event and of a region's season: standings, alliance selection, the playoff, awards and advancement |
+| [`live/`](live/README.md) | The automated polling of a live event/season |
 | [`analysis/`](analysis/README.md) | Head-to-head comparison of pRidge, EPA, and OPR on the same alliances |
 
 The models read the warehouse and write ratings back to it. `analysis` reads matches and EPA ratings from the warehouse and refits pRidge and OPR itself.
@@ -31,4 +33,11 @@ Each module's README has its own quick start. [`CONTRIBUTING.md`](CONTRIBUTING.m
 | [`epa/docs/open-questions.md`](epa/docs/open-questions.md) | Pending investigations |
 | [`pridge/docs/methodology.md`](pridge/docs/methodology.md) | The pRidge model, its constants, and the evidence behind them |
 | [`pridge/docs/loocv-derivation.md`](pridge/docs/loocv-derivation.md) | Leave-one-out error from a single fit |
+| [`sim/docs/score-distribution.md`](sim/docs/score-distribution.md) | The probability distribution observed on score outcomes from predictions |
+| [`sim/docs/score-and-rp-model.md`](sim/docs/score-and-rp-model.md) | How match outcomes and RP are modeled. |
+| [`sim/docs/fouls.md`](sim/docs/fouls.md) | How fouls affect the models |
+| [`sim/docs/pick-model.md`](sim/docs/pick-model.md) | Alliance selection model |
+| [`sim/docs/award-model.md`](sim/docs/award-model.md) | Judged award model |
+| [`sim/docs/rosters.md`](sim/docs/rosters.md) | Event registration input format |
+| [`sim/docs/open-questions.md`](sim/docs/open-questions.md) | Pending investigations |
 | [`analysis/docs/head-to-head.md`](analysis/docs/head-to-head.md) | The comparison method and the standing result |

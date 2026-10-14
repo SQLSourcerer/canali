@@ -40,9 +40,9 @@ uv run pytest -m ""                    # every tier, including the ones needing 
 
 | Schema | Holds |
 | --- | --- |
-| `raw` | Payload provenance: hashes, ingest runs, cursors, conflicts, diffs, and the live match signal |
+| `raw` | Payload provenance: hashes, ingest runs, cursors, conflicts, diffs, the live match signal |
 | `core` | The organized data: seasons, events, teams, matches, breakdowns, rankings, awards, advancement |
-| `derived` | Computed output: fit runs, OPR, EPA and pRidge ratings |
+| `derived` | Computed output: fit runs, OPR, EPA and pRidge ratings, and event and season simulation |
 | `pub` | Public views |
 
 Views are the contract and base tables are private. Reads go through `pub`.
