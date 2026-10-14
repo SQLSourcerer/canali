@@ -80,6 +80,7 @@ with `\dt+ core.*`.
 | `v_event_advancement`, `v_advancement_slot`, `v_advancement_points` | Where an advancing event's slots go and how many, with a Championship's FIRST Championship share, the team in each slot, and each team's official points |
 | `v_opr` | The computed OPR baseline: auto, teleop, total |
 | `v_fit_run`, `v_team_epa`, `v_team_epa_pre_event`, `v_team_pridge` | Model output. `v_fit_run` publishes completed batch runs only. Join it at a named version |
+| `v_event_sim_run`, `v_event_sim_result`, `v_season_sim_run`, `v_season_sim_result` | Sim output: one run per event or region at each predictor and sim version, and each team's chances in it |
 | `v_rule_pack`, `v_rule_pack_component` | A season's scoring vocabulary. |
 | `v_ingest_cursor`, `v_ingest_conflict`, `v_ingest_diff` | What ingest fetched and when, where two suppliers disagreed, and what an in-season re-pull overwrote |
 
