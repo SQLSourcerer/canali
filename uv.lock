@@ -596,6 +596,7 @@ dependencies = [
     { name = "pridge" },
     { name = "sim" },
     { name = "structlog" },
+    { name = "typer" },
     { name = "warehouse" },
 ]
 
@@ -606,6 +607,7 @@ requires-dist = [
     { name = "pridge", editable = "pridge" },
     { name = "sim", editable = "sim" },
     { name = "structlog", specifier = ">=24.4" },
+    { name = "typer", specifier = ">=0.15" },
     { name = "warehouse", editable = "warehouse" },
 ]
 

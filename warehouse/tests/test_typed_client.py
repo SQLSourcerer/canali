@@ -207,27 +207,6 @@ def test_breakdowns_refuse_a_column_the_pack_does_not_declare(wh: Warehouse) -> 
         wh.breakdowns(SEASON, event_id, ["auto_widget_points", "not_a_component"])
 
 
-def test_prior_event_counts_look_back_within_the_season_only(wh: Warehouse) -> None:
-    with wh.engine.begin() as conn:
-        first = seed_event(conn, "SYNQ1", day=1)
-        second = seed_event(conn, "SYNQ2", day=8)
-        ensure_teams(conn, (101, 102))
-        run = seed_fit_run(conn, version="epa-0.9.0")
-        conn.execute(
-            derived.team_epa.insert(),
-            [
-                {"fit_run_id": run, "model_version": "epa-0.9.0", **epa_row(101, "post_event", first, 12, 10.0)},
-                {"fit_run_id": run, "model_version": "epa-0.9.0", **epa_row(101, "pre_event", second, 0, 10.0)},
-                {"fit_run_id": run, "model_version": "epa-0.9.0", **epa_row(102, "pre_event", second, 0, 10.0)},
-            ],
-        )
-
-    counts = wh.prior_event_counts(second, "epa-0.9.0")
-
-    assert counts == {101: 1}
-    assert wh.prior_event_counts(first, "epa-0.9.0") == {}
-
-
 # ---------------------------------------------------------------------------------------------------------- writes
 
 

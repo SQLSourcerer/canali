@@ -6,6 +6,7 @@ import datetime as dt
 import time
 import uuid
 from collections.abc import Callable
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -122,19 +123,25 @@ class Poller:
         return True
 
 
+class Runner(Protocol):
+    def run(self, should_stop: Callable[[], bool], *, sleep: Callable[[float], object]) -> None: ...
+
+
 def supervise(
-    make_poller: Callable[[], Poller],
+    make: Callable[[], Runner],
     should_stop: Callable[[], bool],
     restart_s: float,
     sleep: Callable[[float], object] = time.sleep,
+    *,
+    name: str = "poll",
 ) -> int:
-    """Run a poller until stopped, starting a fresh one after a crash, and return the number of restarts."""
+    """Run a fresh runner until stopped, starting another after a crash, and return the number of restarts."""
     restarts = 0
     while not should_stop():
         try:
-            make_poller().run(should_stop, sleep=sleep)
+            make().run(should_stop, sleep=sleep)
         except Exception:
-            log.exception("poll.crashed", restarts=restarts)
+            log.exception(f"{name}.crashed", restarts=restarts)
             restarts += 1
             sleep(restart_s)
     return restarts

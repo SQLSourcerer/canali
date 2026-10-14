@@ -147,3 +147,13 @@ sweep = Table(
     schema="raw",
     comment="Each weekly sweep the poller finished, by the local date it ran. The live batch waits for it.",
 )
+
+signal_cursor = Table(
+    "signal_cursor",
+    metadata,
+    Column("consumer", Text, primary_key=True),
+    Column("signal_id", BigInteger, nullable=False),
+    Column("updated_at_utc", TIMESTAMP(timezone=True), nullable=False),
+    schema="raw",
+    comment="The last match_signal each consumer has carried through, by signal_id.",
+)

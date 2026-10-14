@@ -10,7 +10,11 @@ dependencies = [
     "sim",
     "numpy>=2.1",
     "structlog>=24.4",
+    "typer>=0.15",
 ]
+
+[project.scripts]
+live = "live.cli:app"
 
 [build-system]
 requires = ["hatchling"]

@@ -42,13 +42,13 @@ class BatchResult:
 
 
 def batch_due(warehouse: Warehouse, season: int) -> bool:
-    """Whether the season's latest sweep finished after its batch run."""
+    """Check if it is time to update world-wide results."""
+    finished = warehouse.batch_finished_at(EPA_MODEL, season, EPA_VERSION)
+    if finished is None:
+        return True
     with warehouse.engine.connect() as conn:
         swept = last_swept(conn, season)
-    if swept is None:
-        return False
-    finished = warehouse.batch_finished_at(EPA_MODEL, season, EPA_VERSION)
-    return finished is None or finished < swept
+    return swept is not None and finished < swept
 
 
 def weekly_batch(warehouse: Warehouse, season: int) -> BatchResult:

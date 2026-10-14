@@ -859,34 +859,6 @@ class Warehouse:
                 )
             ]
 
-    def prior_event_counts(self, event_id: uuid.UUID, model_version: str) -> dict[int, int]:
-        """How many events each team of this event had already completed this season.
-
-        Counted from `post_event` rows at a lower `event_ordinal`, so a team appearing for the first time this
-        season is absent rather than present at zero.
-        """
-        sql = text(
-            """
-            WITH target AS (
-                SELECT season, event_ordinal FROM pub.v_event_sequence WHERE event_id = :event
-            )
-            SELECT t.team_number, count(DISTINCT t.event_id) AS n_prior
-            FROM pub.v_team_epa t
-            JOIN pub.v_event_sequence s ON s.event_id = t.event_id
-            JOIN target ON target.season = s.season
-            WHERE t.model_version = :version
-              AND t.tag = 'post_event'
-              AND t.season = target.season
-              AND s.event_ordinal < target.event_ordinal
-            GROUP BY t.team_number
-            """
-        )
-        with self._engine.connect() as conn:
-            return {
-                int(r.team_number): int(r.n_prior)
-                for r in conn.execute(sql, {"event": event_id, "version": model_version})
-            }
-
     def team_pridge_rows(
         self,
         event_id: uuid.UUID,

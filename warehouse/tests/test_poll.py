@@ -101,7 +101,7 @@ def test_supervise_starts_a_fresh_poller_after_a_crash() -> None:
                 raise RuntimeError("the database went away")
             stopped.append(True)
 
-    restarts = supervise(Poller, lambda: bool(stopped), restart_s=30, sleep=sleeps.append)  # type: ignore[arg-type]
+    restarts = supervise(Poller, lambda: bool(stopped), restart_s=30, sleep=sleeps.append)
 
     assert (restarts, made, sleeps) == (2, [0, 1, 2], [30, 30])
 
