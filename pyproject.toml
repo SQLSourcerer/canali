@@ -4,6 +4,7 @@ version = "1.0.0"
 description = "FTC statistics stack: warehouse, EPA engine, pRidge engine, analysis, simulation."
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = []
 
 [dependency-groups]

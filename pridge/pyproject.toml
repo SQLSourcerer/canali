@@ -3,6 +3,7 @@ name = "pridge"
 version = "1.0.0"
 description = "FTC pRidge rating engine: per-event ridge regression regularized toward pre-event EPA."
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
     "warehouse",
     "numpy>=2.1",

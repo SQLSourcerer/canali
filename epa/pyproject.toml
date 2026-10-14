@@ -3,6 +3,7 @@ name = "epa"
 version = "1.0.0"
 description = "FTC EPA rating engine: event-sequential expected points added, fit per season from the rule pack."
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
     "warehouse",
     "numpy>=2.1",

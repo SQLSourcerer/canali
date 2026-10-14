@@ -3,6 +3,7 @@ name = "sim"
 version = "1.0.0"
 description = "FTC event and season simulation."
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
     "warehouse",
     "numpy>=2.1",

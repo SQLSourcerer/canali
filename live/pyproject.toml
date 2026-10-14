@@ -3,6 +3,7 @@ name = "live"
 version = "1.0.0"
 description = "The live cascade: updating the warehouse and simulation in real time."
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
     "warehouse",
     "epa",

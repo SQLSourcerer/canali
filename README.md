@@ -41,3 +41,7 @@ Each module's README has its own quick start. [`CONTRIBUTING.md`](CONTRIBUTING.m
 | [`sim/docs/rosters.md`](sim/docs/rosters.md) | Event registration input format |
 | [`sim/docs/open-questions.md`](sim/docs/open-questions.md) | Pending investigations |
 | [`analysis/docs/head-to-head.md`](analysis/docs/head-to-head.md) | The comparison method and the standing result |
+
+## License
+
+[MIT](LICENSE). FTC Events and FTCScout data stays under those services' own terms.

@@ -3,6 +3,7 @@ name = "warehouse"
 version = "1.0.0"
 description = "FTC statistics warehouse: Postgres database for raw API data and derived statistics."
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
     "alembic>=1.16",
     "sqlalchemy>=2.0.36",
