@@ -611,6 +611,14 @@ def upgrade() -> None:
         sa.UniqueConstraint("event_id", "predictor", "sim_version", "as_of_match", name="uq_event_sim_run_key"),
         schema="derived",
     )
+    op.create_index(
+        "ix_event_sim_run_keys",
+        "event_sim_run",
+        ["sim_run_id"],
+        unique=False,
+        schema="derived",
+        postgresql_include=["event_id", "predictor", "sim_version", "as_of_match"],
+    )
     op.create_table(
         "event_sim_result",
         sa.Column("sim_run_id", sa.UUID(), nullable=False),
@@ -638,6 +646,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("sim_run_id", "team_number", name=op.f("pk_event_sim_result")),
         schema="derived",
+    )
+    op.create_index(
+        "ix_event_sim_result_team_number", "event_sim_result", ["team_number"], unique=False, schema="derived"
     )
     op.create_table(
         "season_sim_run",
@@ -676,6 +687,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("sim_run_id", "team_number", name=op.f("pk_season_sim_result")),
         schema="derived",
+    )
+    op.create_index(
+        "ix_season_sim_result_team_number", "season_sim_result", ["team_number"], unique=False, schema="derived"
     )
     op.create_table(
         "match_signal",
@@ -720,9 +734,12 @@ def downgrade() -> None:
     op.drop_table("signal_cursor", schema="raw")
     op.drop_table("sweep", schema="raw")
     op.drop_table("match_signal", schema="raw")
+    op.drop_index("ix_season_sim_result_team_number", table_name="season_sim_result", schema="derived")
     op.drop_table("season_sim_result", schema="derived")
     op.drop_table("season_sim_run", schema="derived")
+    op.drop_index("ix_event_sim_result_team_number", table_name="event_sim_result", schema="derived")
     op.drop_table("event_sim_result", schema="derived")
+    op.drop_index("ix_event_sim_run_keys", table_name="event_sim_run", schema="derived")
     op.drop_table("event_sim_run", schema="derived")
     op.drop_index("ix_playoff_alliance_pick_team_number", table_name="playoff_alliance_pick", schema="core")
     op.drop_table("playoff_alliance_pick", schema="core")

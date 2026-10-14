@@ -145,6 +145,11 @@ event_sim_run = Table(
     Column("achieved_mcse", Float, nullable=False),
     Column("computed_at_utc", TIMESTAMP(timezone=True), nullable=False),
     UniqueConstraint("event_id", "predictor", "sim_version", "as_of_match", name="uq_event_sim_run_key"),
+    Index(
+        "ix_event_sim_run_keys",
+        "sim_run_id",
+        postgresql_include=["event_id", "predictor", "sim_version", "as_of_match"],
+    ),
     schema="derived",
 )
 
@@ -173,6 +178,7 @@ event_sim_result = Table(
         name="probabilities",
     ),
     CheckConstraint("mean_rank >= 1", name="mean_rank"),
+    Index("ix_event_sim_result_team_number", "team_number"),
     schema="derived",
 )
 
@@ -212,5 +218,6 @@ season_sim_result = Table(
         "p_attend_rcmp BETWEEN 0 AND 1 AND p_premier BETWEEN 0 AND 1 AND p_cmp BETWEEN 0 AND 1",
         name="probabilities",
     ),
+    Index("ix_season_sim_result_team_number", "team_number"),
     schema="derived",
 )
