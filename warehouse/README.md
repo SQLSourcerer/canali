@@ -73,11 +73,11 @@ root. Anything that speaks the Postgres network protocol works instead.
 
 ### Credentials
 
-Reading from FTC Events needs your own.
+Reading from FTC Events needs your own, in `warehouse/.env`, which git ignores, or in the environment.
 
 ```
-export WAREHOUSE_FTC_EVENTS_USERNAME=...
-export WAREHOUSE_FTC_EVENTS_TOKEN=...
+echo 'WAREHOUSE_FTC_EVENTS_USERNAME=...' >> warehouse/.env
+echo 'WAREHOUSE_FTC_EVENTS_TOKEN=...' >> warehouse/.env
 uv run warehouse ingest event 2025 USPACMP      # one event, every endpoint
 uv run warehouse ingest region 2025 --limit 3   # one region, a few events
 uv run pytest -m credentialed                   # check all endpoints
@@ -105,4 +105,4 @@ auto and teleop.
 
 - `docs/data-sources.md`: what each supplier provides, and its known gaps.
 - `docs/psql-guide.html`: local database setup and navigation.
-- `docs/open-questions.md`: pending investigations.
+- [`../docs/open-questions.md`](../docs/open-questions.md#warehouse): pending investigations.

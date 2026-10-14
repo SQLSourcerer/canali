@@ -14,5 +14,8 @@ build/
 # Host-local
 var/
 
+# Plan files, committed with `git add -f` only when shared
+plans/
+
 # Local dev database URL, written by `warehouse db start`
 .db-url.local

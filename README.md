@@ -26,11 +26,10 @@ Each module's README has its own quick start. [`CONTRIBUTING.md`](CONTRIBUTING.m
 
 | Document | Covers |
 | --- | --- |
+| [`docs/open-questions.md`](docs/open-questions.md) | Pending investigations, by module |
 | [`warehouse/docs/data-sources.md`](warehouse/docs/data-sources.md) | What each supplier provides and its known quirks |
 | [`warehouse/docs/psql-guide.md`](warehouse/docs/psql-guide.md) | Local database setup and navigation |
-| [`warehouse/docs/open-questions.md`](warehouse/docs/open-questions.md) | Pending investigations |
 | [`epa/docs/methodology.md`](epa/docs/methodology.md) | The EPA model, its constants, and the evidence behind them |
-| [`epa/docs/open-questions.md`](epa/docs/open-questions.md) | Pending investigations |
 | [`pridge/docs/methodology.md`](pridge/docs/methodology.md) | The pRidge model, its constants, and the evidence behind them |
 | [`pridge/docs/loocv-derivation.md`](pridge/docs/loocv-derivation.md) | Leave-one-out error from a single fit |
 | [`sim/docs/score-distribution.md`](sim/docs/score-distribution.md) | The probability distribution observed on score outcomes from predictions |
@@ -39,7 +38,6 @@ Each module's README has its own quick start. [`CONTRIBUTING.md`](CONTRIBUTING.m
 | [`sim/docs/pick-model.md`](sim/docs/pick-model.md) | Alliance selection model |
 | [`sim/docs/award-model.md`](sim/docs/award-model.md) | Judged award model |
 | [`sim/docs/rosters.md`](sim/docs/rosters.md) | Event registration input format |
-| [`sim/docs/open-questions.md`](sim/docs/open-questions.md) | Pending investigations |
 | [`analysis/docs/head-to-head.md`](analysis/docs/head-to-head.md) | The comparison method and the standing result |
 
 ## License

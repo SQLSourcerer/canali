@@ -119,4 +119,4 @@ comparable to one already stored under that version. The predictor's version is 
 - [`docs/pick-model.md`](docs/pick-model.md): alliance selection model.
 - [`docs/award-model.md`](docs/award-model.md): judged award model.
 - [`docs/rosters.md`](docs/rosters.md): event registration input format.
-- [`docs/open-questions.md`](docs/open-questions.md): pending investigations.
+- [`../docs/open-questions.md`](../docs/open-questions.md#sim): pending investigations.
