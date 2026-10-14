@@ -97,8 +97,12 @@ def run_event(inputs: EventInputs, *, as_of_match: int | None = None) -> EventFi
 
 def write_fit(warehouse: Warehouse, fit_run_id: uuid.UUID, inputs: EventInputs, result: EventFit) -> int:
     """Write one fit's ratings, the total and each component, at its match index."""
+    return warehouse.write_team_pridge(fit_run_id, MODEL_VERSION, _fit_rows(inputs, result))
+
+
+def _fit_rows(inputs: EventInputs, result: EventFit) -> list[dict[str, object]]:
     sources = [(TOTAL, result.total), *((name, result.components[name]) for name in sorted(result.components))]
-    rows = [
+    return [
         {
             "season": inputs.season,
             "team_number": team,
@@ -111,7 +115,6 @@ def write_fit(warehouse: Warehouse, fit_run_id: uuid.UUID, inputs: EventInputs, 
         for component, fit in sources
         for index, team in enumerate(result.team_numbers)
     ]
-    return warehouse.write_team_pridge(fit_run_id, MODEL_VERSION, rows)
 
 
 def run_season(warehouse: Warehouse, season: int, source: PriorSource, *, write: bool = False) -> SeasonReport:
@@ -157,7 +160,8 @@ def run_season(warehouse: Warehouse, season: int, source: PriorSource, *, write:
 
 
 def run_live(warehouse: Warehouse, inputs: EventInputs, *, from_match: int = 1) -> list[EventFit]:
-    """Refit an event at every match index from `from_match`, writing each under the event's live run.
+    """Refit an event at every match index from `from_match`, or from the first index after the live run's last
+    fit if that is earlier, replacing the run's fits from there on.
 
     A live run is one per event, model version and prior version.
     """
@@ -170,15 +174,16 @@ def run_live(warehouse: Warehouse, inputs: EventInputs, *, from_match: int = 1) 
         prior_version=inputs.prior_version,
         notes={"partition": list(inputs.partition.names)},
     )
-    ordinals = sorted({row.event_match_ordinal for row in inputs.rows if row.event_match_ordinal >= from_match})
+    start = min(from_match, warehouse.pridge_fitted_through(run_id) + 1)
+    ordinals = sorted({row.event_match_ordinal for row in inputs.rows if row.event_match_ordinal >= start})
     fits: list[EventFit] = []
     for k in ordinals:
         try:
-            result = run_event(inputs, as_of_match=k)
+            fits.append(run_event(inputs, as_of_match=k))
         except ValueError:
             continue
-        write_fit(warehouse, run_id, inputs, result)
-        fits.append(result)
+    rows = [row for result in fits for row in _fit_rows(inputs, result)]
+    warehouse.write_team_pridge(run_id, MODEL_VERSION, rows, replace_from=start)
     warehouse.finish_fit_run(run_id)
     return fits
 

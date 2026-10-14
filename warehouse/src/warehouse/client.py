@@ -895,6 +895,12 @@ class Warehouse:
                 for r in conn.execute(sql, params)
             ]
 
+    def pridge_fitted_through(self, fit_run_id: uuid.UUID) -> int:
+        """The highest match index a pRidge run holds a fit at, 0 when it holds none."""
+        sql = text("SELECT coalesce(max(as_of_match), 0) FROM pub.v_team_pridge WHERE fit_run_id = :run")
+        with self._engine.connect() as conn:
+            return int(conn.execute(sql, {"run": fit_run_id}).scalar_one())
+
     # --------------------------------------------------------------------------------------------------- writes
 
     def start_fit_run(
@@ -966,9 +972,11 @@ class Warehouse:
             log.info("fit_run.replaced", fit_run_id=str(fit_run_id), replaced=replaced)
         return replaced
 
-    def write_team_epa(self, fit_run_id: uuid.UUID, model_version: str, rows: Sequence[Mapping[str, Any]]) -> int:
-        """Upsert `team_epa` rows at any tag."""
-        if not rows:
+    def write_team_epa(
+        self, fit_run_id: uuid.UUID, model_version: str, rows: Sequence[Mapping[str, Any]], *, replace: bool = False
+    ) -> int:
+        """Upsert `team_epa` rows at any tag, with ``replace`` first clearing every row the run already holds."""
+        if not rows and not replace:
             return 0
         stmt = text(
             """
@@ -997,6 +1005,8 @@ class Warehouse:
             for r in rows
         ]
         with self._engine.begin() as conn:
+            if replace:
+                conn.execute(text("DELETE FROM derived.team_epa WHERE fit_run_id = :run"), {"run": fit_run_id})
             _execute_chunked(conn, stmt, payload)
         return len(payload)
 
@@ -1073,9 +1083,16 @@ class Warehouse:
                 _execute_chunked(conn, insert_results, [{**r, "sim_run_id": sim_run_id} for r in results])
         return sim_run_id
 
-    def write_team_pridge(self, fit_run_id: uuid.UUID, model_version: str, rows: Sequence[Mapping[str, Any]]) -> int:
-        """Upsert `team_pridge` rows."""
-        if not rows:
+    def write_team_pridge(
+        self,
+        fit_run_id: uuid.UUID,
+        model_version: str,
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        replace_from: int | None = None,
+    ) -> int:
+        """Upsert `team_pridge` rows, with ``replace_from`` first clearing the run's rows from that match index on."""
+        if not rows and replace_from is None:
             return 0
         stmt = text(
             """
@@ -1090,6 +1107,11 @@ class Warehouse:
         )
         payload = [{"fit_run_id": fit_run_id, "model_version": model_version, **dict(r)} for r in rows]
         with self._engine.begin() as conn:
+            if replace_from is not None:
+                conn.execute(
+                    text("DELETE FROM derived.team_pridge WHERE fit_run_id = :run AND as_of_match >= :start"),
+                    {"run": fit_run_id, "start": replace_from},
+                )
             _execute_chunked(conn, stmt, payload)
         return len(payload)
 

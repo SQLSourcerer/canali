@@ -331,7 +331,8 @@ def persist(
     model_version: str = MODEL_VERSION,
     notes: dict[str, object] | None = None,
 ) -> uuid.UUID:
-    """Write a replay's rows under one ``fit_run``, which on finishing replaces the run it supersedes."""
+    """Write a replay's rows under one ``fit_run``, replacing any rows it held. On finishing, the run replaces the
+    run it supersedes."""
     run_id = warehouse.start_fit_run(
         model=MODEL_NAME,
         model_version=model_version,
@@ -357,6 +358,7 @@ def persist(
             }
             for row in rows
         ],
+        replace=True,
     )
     warehouse.finish_fit_run(run_id)
     return run_id
