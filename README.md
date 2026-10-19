@@ -16,8 +16,8 @@ The models read the warehouse and write ratings back to it. `analysis` reads mat
 ## Quick start
 
 ```bash
-uv sync --all-packages     # .venv, every workspace member, the dev group
-uv run pytest              # tests that need no database
+uv sync --all-packages     # install everything in the .venv
+uv run pytest              # run the tests, no database needed
 ```
 
 Each module's README has its own quick start. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the development environment, test tags, and style.
@@ -40,6 +40,19 @@ Each module's README has its own quick start. [`CONTRIBUTING.md`](CONTRIBUTING.m
 | [`sim/docs/rosters.md`](sim/docs/rosters.md) | Event registration input format |
 | [`analysis/docs/head-to-head.md`](analysis/docs/head-to-head.md) | The comparison method and the standing result |
 
+## Why Canali?
+
+I volunteer with [Mars Robotics](https://www.marsroboticsassociation.org/) in Mars, PA.
+
+The name comes from the illusory [Martian canals](https://en.wikipedia.org/wiki/Martian_canals). *Canali* is Italian
+for channels. Astronomers looking through the telescopes of the day reported canali crossing the surface of Mars, the
+word was misconstrued in English as canals, and some took them for waterways built by Martians. The lines were never
+there, a pattern drawn from faint and imperfect observations.
+
+The business of statistics is finding patterns in noisy data, the name "canali" is an on-brand warning that convincing
+patterns can still be wrong. It's also a reminder that the goal is not to squint harder, but to
+build better instrumentation.
+
 ## License
 
-[MIT](LICENSE). FTC Events and FTCScout data stays under those services' own terms.
+[MIT](LICENSE).
