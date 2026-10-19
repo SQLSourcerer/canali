@@ -1,0 +1,25 @@
+[project]
+name = "canali-worker"
+version = "0.1.0"
+description = "Local D1 event-computation prototype"
+requires-python = ">=3.13"
+dependencies = ["numpy", "scipy"]
+
+[dependency-groups]
+dev = ["workers-py", "workers-runtime-sdk", "pytest", "ruff"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+extend = "../pyproject.toml"
+target-version = "py313"
+
+[tool.ruff.lint.per-file-ignores]
+"src/compute.py" = ["PLR0912"]
+"src/entry.py" = ["PLR0911"]
+"smoke.py" = ["T201"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

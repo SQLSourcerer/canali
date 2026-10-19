@@ -1,0 +1,19 @@
+name = "canali-local"
+main = "src/entry.py"
+compatibility_date = "2026-10-19"
+compatibility_flags = ["python_workers"]
+workers_dev = false
+
+[build]
+command = "python prepare.py"
+watch_dir = ["src", "../epa/src/epa/model.py", "../pridge/src/pridge/estimator.py", "../sim/src/sim/score.py"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "canali-local"
+# Local-only placeholder. Replace with an actual database ID before deployment.
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "migrations"
+
+[vars]
+LOCAL_PROTOTYPE = "true"
