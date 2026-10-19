@@ -39,7 +39,7 @@ for package, modules in MODULES.items():
             copyfile(source / name, target / name)
         digest.update(f"{package}/{name}".encode())
         digest.update((source / name).read_bytes())
-for name in ("forecast.py", "snapshot.py", "forecast_store.py", "season.py", "first_event.py"):
+for name in ("forecast.py", "snapshot.py", "forecast_store.py", "season.py", "first_event.py", "components.py"):
     path = ROOT / "src" / name
     if path.exists():
         digest.update(path.read_bytes())

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import httpx
 
 from warehouse.ingest.client import FtcEventsClient
+from warehouse.rules.model import RulePack
 
 
 def checked(response):
@@ -21,6 +22,7 @@ def main():
     parser.add_argument("season", type=int)
     parser.add_argument("--events", required=True, help="Comma-separated event codes, including divisions as needed")
     parser.add_argument("--config", type=Path, help="Optional previous_norm and second_norm mappings")
+    parser.add_argument("--rule-pack", type=Path, help="Enable component EPA with this season's rule-pack TOML")
     parser.add_argument("--base-url", default="http://127.0.0.1:8787")
     args = parser.parse_args()
     url = urlparse(args.base_url)
@@ -30,6 +32,11 @@ def main():
         parser.error("invalid season")
     requested = set(args.events.split(","))
     config = json.loads(args.config.read_text(encoding="utf-8")) if args.config else {}
+    if args.rule_pack:
+        pack = RulePack.from_file(args.rule_pack)
+        if pack.season != args.season:
+            parser.error("--rule-pack must match the requested season")
+        config["rule_pack"] = pack.model_dump(mode="json")
     archive = Path(__file__).resolve().parents[1] / "var" / "worker-season" / str(args.season)
     archive.mkdir(parents=True, exist_ok=True)
     with FtcEventsClient() as client, httpx.Client(base_url=args.base_url.rstrip("/"), timeout=120) as worker:
@@ -43,6 +50,11 @@ def main():
             if teams.status != 200 or schedule.status != 200:
                 raise SystemExit(f"FIRST HTTP {teams.status}/{schedule.status} for {code}; replay not started")
             source = {"event": events[code], "teams": teams.data, "schedule": schedule.data}
+            if config.get("rule_pack"):
+                scores = client.scores(args.season, code, "qual")
+                if scores.status != 200:
+                    raise SystemExit(f"FIRST scores HTTP {scores.status} for {code}; replay not started")
+                source["scores"] = scores.data
             report = checked(worker.put(f"/seasons/{args.season}/events/{code}", json=source))
             (archive / f"{code}.json").write_text(json.dumps(source, indent=2), encoding="utf-8")
             print(json.dumps(report))

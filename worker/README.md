@@ -3,8 +3,8 @@
 Runs prepared event inputs through the existing Python models, saving results in local D1. It supports qualification
 EPA/pRidge totals and match forecasts, plus the complete single-event Monte Carlo: standings, alliance selection,
 playoffs, judged awards and advancement. A native importer fetches one event's official FIRST qualification data
-without Postgres. D1 can replay an imported season corpus to supply pre-event total EPA priors. Component ratings
-and fitted simulation models are still prepared separately.
+without Postgres. D1 can replay an imported season corpus to supply pre-event total and component EPA priors.
+Fitted simulation models are still prepared separately.
 
 ## Run locally
 
@@ -45,8 +45,8 @@ rather than the ignored copies under `src/`. Package and runtime support must al
 
 The EPA and pRidge calculations use the supplied priors; initialization, layoff adjustment and season normalization
 must happen before preparing those inputs. One or two rated teams per alliance are supported. The prototype computes
-total ratings only. Component rating updates, weekly calibration and regional season simulations have not
-yet been ported.
+total ratings only. Component EPA is available through the season replay below. Weekly calibration and regional
+season simulations have not yet been ported.
 
 ## Import a FIRST event
 
@@ -96,10 +96,11 @@ Source documents are saved in the ignored `var/worker-season/2025/` directory.
 
 This is a replay of the **imported qualification corpus**. The example includes three events and omits the rest of
 those teams' season histories; it is a parity check, not a complete season rating. Supply every relevant event code
-for a full qualification corpus. Playoff contributions, component EPA and end-of-season percentile normalization
-are outside this slice. Event ordering matches the warehouse: start date, then event code, with match numbers in order.
+for a full qualification corpus. Playoff contributions and end-of-season percentile normalization remain in the native
+pipeline. Event ordering matches the warehouse: start date, then event code, with match numbers in order.
 
-The Worker calls the existing native `replay_season` engine with a total-only partition and the versioned EPA constants.
+The Worker calls the existing native `replay_season` engine with the versioned EPA constants. Without a rule pack it
+uses a total-only partition; a supplied rule pack enables its default component partition.
 It computes initialization from the first 4,000 scored alliance rows in the imported corpus. Until that window fills,
 it uses the same provisional scale as the native pipeline: the average measured initialization scale. Rookie seeding,
 K/M schedules, qualification match counts and the capped layoff boost all use the shared implementation.
@@ -126,6 +127,40 @@ demonstration only. EPA priors can be negative, as in the native engine.
 Results computed with season priors carry a season revision. Any season revision or engine change hides those results
 and prevents recomputation with stale priors. Finish the season replay and rerun `import_event.py --season-priors` to
 refresh them. The revision check is conservative: adding a later event also invalidates existing linked results.
+
+### Component EPA
+
+Supply the season's rule pack to fetch score breakdowns and replay its component partition:
+
+```powershell
+uv run python worker/replay_season.py 2025 --events USNJUCM1,USNJUCM2,USNJCMPPKWY --rule-pack warehouse/rule_packs/2025_decode.toml
+```
+
+The rule pack is saved in the season configuration; its default partition is usually `leaf`. The importer fetches
+`/scores/{code}/qual` in addition to the teams and hybrid schedule, and retains those payloads in D1 and the local
+source archive. It converts scoring fields to the rule pack's column names and applies declared robot-state scoring.
+Qualification non-foul totals come from the official final score minus the opponent's committed fouls; DECODE's
+published zero `preFoulTotal` is not used for reconciliation.
+
+Every scored match must have both breakdowns, every selected component must be present and finite, and each alliance's
+component sum must agree with its non-foul score within the native reconciliation tolerance. Invalid imports return
+HTTP 400 and preserve the last valid event and revision. This is stricter than the native batch pipeline's ability to
+exclude individual unratable matches: when upstream totals and breakdowns arrive at different times, retry the import
+once they agree. Unplayed matches do not require breakdowns.
+
+Component ratings use the native initialization, simultaneous match updates and proportional layoff adjustment.
+D1 stores each team's component series with its post-event total and match count. The priors endpoint includes a
+`components` object on each team, keyed by column name, such as `auto_artifact_points`; the sum is that team's `epa`.
+Components and totals can be negative after updates, as in the native engine. The prototype permits up to 64 series.
+
+Enabling components, changing the rule pack or returning to total-only mode requires reimporting **all registered
+events** for that season. Replay and priors return HTTP 409 until their partition fingerprints match the configuration.
+This prevents mixing component definitions or replaying old total-only inputs as component inputs. Changing only
+prior-season normalized ratings restarts replay without requiring a source reimport.
+
+`import_event.py --season-priors` also carries component priors into its saved input, while its qualification calculation
+still updates totals only. Building complete Monte Carlo field snapshots from these component priors is a separate
+step; the `/forecasts` endpoint continues to accept prepared snapshots.
 
 ## Complete event forecasts
 
@@ -166,11 +201,11 @@ HTTP 409; clients can reread the status and retry. Only the latest run for an ev
 | Request | Result |
 | --- | --- |
 | `GET /health` | Runtime package versions |
-| `PUT /seasons/{year}` | Configure normalized prior-season inputs; changed configuration restarts replay |
+| `PUT /seasons/{year}` | Configure normalized prior-season inputs and an optional rule pack; changes restart replay |
 | `GET /seasons/{year}` | Read the revision, event cursor and initialization scale |
-| `PUT /seasons/{year}/events/{code}` | Import official event metadata, teams and qualification schedule |
+| `PUT /seasons/{year}/events/{code}` | Import event metadata, teams, qualification schedule and optional score breakdowns |
 | `POST /seasons/{year}/step` | Rate one event and checkpoint, or report the imported corpus complete |
-| `GET /seasons/{year}/priors/{code}` | Read roster priors, K/M schedules and their season revision |
+| `GET /seasons/{year}/priors/{code}` | Read roster total/component priors, K/M schedules and their season revision |
 | `PUT /imports/{season}-{code}` | Atomically import FIRST payloads and explicit model parameters |
 | `GET /imports/{season}-{code}` | Read the current imported source payloads and parameters, or 404 |
 | `PUT /events/{code}` | Validate and save prepared inputs at a new revision |
@@ -196,7 +231,7 @@ configured. Local success does not establish that the engine fits the production
 ```powershell
 uv run python prepare.py
 uv run pytest
-uv run ruff check src/entry.py src/compute.py src/snapshot.py src/forecast.py src/forecast_store.py src/first_event.py src/season.py prepare.py tests smoke.py import_event.py replay_season.py
+uv run ruff check src/entry.py src/compute.py src/snapshot.py src/forecast.py src/forecast_store.py src/first_event.py src/season.py src/components.py prepare.py tests smoke.py import_event.py replay_season.py
 ```
 
 The unit tests check ratings against a closed-form ridge solution, simultaneous EPA updates, deterministic reruns
@@ -207,3 +242,6 @@ source attribution. Import tests cover foul subtraction, missing results, statio
 Season tests compare event checkpoints with one native replay, exercise the initialization window, and verify suffix
 invalidation, configuration and engine resets, stale-write rejection and prior revision checks. The smoke check also
 replays a synthetic season through real local D1, compares native pre-event and post-event EPA, and corrects an earlier score.
+Component tests compare individual series with native replay, cover state-scored and boolean fields, reject incomplete
+or inconsistent breakdowns without replacing valid data, and prevent mixed rule-pack fingerprints. The D1 smoke check
+exercises both total-only and component replay.

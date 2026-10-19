@@ -45,6 +45,7 @@ def main():
     assert request("/events/SYNTH")[1] == corrected
     check_import()
     check_season()
+    check_season(components=True)
     check_forecast()
     print("Local Worker/D1 smoke test passed: ratings, forecasts, reruns, corrections and input validation.")
 
@@ -103,22 +104,36 @@ def check_import():
     assert request(path)[0] == 404
 
 
-def check_season():
+def check_season(*, components=False):
     import uuid
 
     import numpy as np
+    from components import partition_for
     from season import prepare
 
     from epa.constants import for_season
     from epa.replay import TAG_POST_EVENT, TAG_PRE_EVENT, replay_season
     from epa.scale import Scale
-    from warehouse.rules.partition import ResolvedPartition
+    from warehouse.rules.model import RulePack
 
-    year = 2099
+    year = 2098 if components else 2099
+    pack = (
+        RulePack(
+            season=year,
+            game="TEST",
+            components=[
+                {"name": "autoPoints", "kind": "numeric", "partition_group": "leaf"},
+                {"name": "teleopPoints", "kind": "numeric", "partition_group": "leaf"},
+            ],
+        )
+        if components
+        else None
+    )
+    config = {"rule_pack": pack.model_dump(mode="json")} if pack else {}
     path = f"/seasons/{year}"
     # Changing configuration resets this synthetic corpus on repeated smoke runs.
-    assert request(path, "PUT", {"previous_norm": {"1": 1550}})[0] == 200
-    assert request(path, "PUT", {})[0] == 200
+    assert request(path, "PUT", {**config, "previous_norm": {"1": 1550}})[0] == 200
+    assert request(path, "PUT", config)[0] == 200
     sources = []
     for index, code in enumerate(("SEASON_A", "SEASON_B", "SEASON_C"), 1):
         source = fixture_source()
@@ -133,6 +148,20 @@ def check_season():
             },
         }
         sources.append(source)
+        if pack:
+            source["scores"] = {
+                "matchScores": [
+                    {
+                        "matchLevel": "QUALIFICATION",
+                        "matchSeries": 0,
+                        "matchNumber": 1,
+                        "alliances": [
+                            {"alliance": "Red", "autoPoints": 30, "teleopPoints": 90, "preFoulTotal": 0},
+                            {"alliance": "Blue", "autoPoints": 20, "teleopPoints": 60, "preFoulTotal": 0},
+                        ],
+                    }
+                ]
+            }
         status, report = request(path + "/events/" + code, "PUT", source)
         assert status == 200, report
     assert request(path + "/priors/SEASON_B")[0] == 409
@@ -144,15 +173,24 @@ def check_season():
         assert request(path + "/step", "POST")[1]["status"] == "complete"
 
     def compare():
-        events = [prepare(source, source["event"]["code"]) for source in sources]
+        events = [prepare(source, source["event"]["code"], pack) for source in sources]
         result = replay_season(
             [match for event in events for match in event.stream(year)],
             constants=for_season(year),
-            partition=ResolvedPartition.total_only(year),
+            partition=partition_for(year, pack),
             season_scale=None,
             init_scale=Scale(**request(path)[1]["init_scale"]),
             layoff_boost=for_season(year).layoff_boost,
             compute_norm=False,
+            breakdowns={
+                (uuid.uuid5(event.event_id, str(match.ordinal)), side): getattr(match, f"{side.lower()}_components")
+                for event in events
+                for match in event.matches
+                if match.red_score is not None
+                for side in ("RED", "BLUE")
+            }
+            if pack
+            else None,
         )
         for event in events:
             status, report = request(path + "/priors/" + event.code)
@@ -168,6 +206,18 @@ def check_season():
                 rtol=1e-12,
                 atol=1e-12,
             )
+            if pack:
+                expected_components = {
+                    row.team_number: row.components
+                    for row in result.rows
+                    if row.tag == TAG_PRE_EVENT and row.event_id == event.event_id
+                }
+                for team in report["teams"]:
+                    for column, value in team["components"].items():
+                        np.testing.assert_allclose(
+                            value, expected_components[team["number"]][column], rtol=1e-12, atol=1e-12
+                        )
+                    assert sum(team["components"].values()) == team["epa"]
         return events, result
 
     finish(["SEASON_A", "SEASON_B", "SEASON_C"])
@@ -175,7 +225,7 @@ def check_season():
     parameters = fixture_source()["parameters"]
     parameters.update(request(path + "/priors/SEASON_C")[1])
     parameters["matches"] = [match.model_dump() for match in events[-1].matches]
-    result_path = "/events/2099-SEASON_C"
+    result_path = f"/events/{year}-SEASON_C"
     assert request(result_path, "PUT", parameters)[0] == 200
     status, report = request(result_path + "/run", "POST")
     assert status == 200, report
@@ -191,6 +241,12 @@ def check_season():
         atol=1e-12,
     )
     sources[1]["schedule"]["schedule"][0]["scoreRedFinal"] += 20
+    if pack:
+        revision = request(path)[1]["revision"]
+        assert request(path + "/events/SEASON_B", "PUT", sources[1])[0] == 400
+        assert request(path)[1]["revision"] == revision
+        assert request(result_path)[0] == 200
+        sources[1]["scores"]["matchScores"][0]["alliances"][0]["autoPoints"] += 20
     assert request(path + "/events/SEASON_B", "PUT", sources[1])[0] == 200
     assert request(path)[1]["cursor"].endswith(":SEASON_A")
     assert request(result_path)[0] == 404
@@ -198,7 +254,7 @@ def check_season():
     finish(["SEASON_B", "SEASON_C"])
     compare()
     assert request(result_path)[0] == 404
-    print("Season replay passed: native priors, event totals, correction replay and stale-result invalidation.")
+    print(f"Season replay passed (components={components}): native parity, corrections and stale-result invalidation.")
 
 
 def check_forecast():

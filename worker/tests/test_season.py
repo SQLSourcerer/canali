@@ -99,8 +99,8 @@ def event(code, day, red=120, blue=80):
     )
 
 
-def upload(db, e):
-    source = {
+def event_source(e):
+    return {
         "event": {"code": e.code, "eventId": str(e.event_id), "dateStart": e.day.isoformat(), "typeName": e.event_type},
         "teams": {"teams": [{"teamNumber": t} for t in e.roster]},
         "schedule": {
@@ -122,7 +122,10 @@ def upload(db, e):
             ]
         },
     }
-    return call(db, "events", e.code, "PUT", source)
+
+
+def upload(db, e):
+    return call(db, "events", e.code, "PUT", event_source(e))
 
 
 def test_event_checkpoints_equal_one_native_replay():
@@ -214,7 +217,10 @@ def test_initialization_window_and_prefix_corrections_reset_all():
     assert asyncio.run(refresh_scale(db, YEAR, state))
     expected = asdict(compute_scale([120.0, 80.0] * 2000, YEAR))
     assert call(db)[0]["init_scale"] == expected
-    db.sql.execute("INSERT INTO season_rating VALUES (?, ?, 1, 50, 1000, ?)", (YEAR, a.key, a.day.isoformat()))
+    db.sql.execute(
+        "INSERT INTO season_rating(season,event_key,team,epa,played,last_played) VALUES (?, ?, 1, 50, 1000, ?)",
+        (YEAR, a.key, a.day.isoformat()),
+    )
     db.sql.execute("UPDATE season_run SET cursor = ?", (c.key,))
     c.matches[0].red_score += 10
     upload(db, c)

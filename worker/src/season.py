@@ -7,21 +7,23 @@ from collections import Counter
 from dataclasses import asdict
 from datetime import date
 
+from components import attach, partition_for, version
 from engine_version import ENGINE_VERSION
 from first_event import qualification_matches
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, PositiveInt, model_validator
 
 from epa.constants import MEASURED_INIT_SCALES, for_season
 from epa.corpus import Alliance, RatedMatch
-from epa.replay import TAG_POST_EVENT, TeamSeed, replay_season
+from epa.replay import TAG_POST_EVENT, TeamSeed, TeamState, apply_layoff, initial_series, replay_season
 from epa.scale import Scale, carry_forward, compute_scale, provisional_scale
-from warehouse.rules.partition import ResolvedPartition
+from warehouse.rules.model import RulePack
 from warehouse.tier import tier_for
 
 SAVE_RATINGS = (
-    "INSERT OR REPLACE INTO season_rating(season, event_key, team, epa, played, last_played) "
+    "INSERT OR REPLACE INTO season_rating(season, event_key, team, epa, played, last_played, components) "
     "SELECT ?, ?, json_extract(value, '$.team'), json_extract(value, '$.epa'), "
-    "json_extract(value, '$.played'), json_extract(value, '$.last_played') FROM json_each(?) "
+    "json_extract(value, '$.played'), json_extract(value, '$.last_played'), "
+    "coalesce(json_extract(value, '$.components'), '{}') FROM json_each(?) "
     "WHERE EXISTS (SELECT 1 FROM season_run WHERE season = ? AND revision = ? AND cursor = ? "
     "AND scale_dirty = 0 AND engine_version = ?)"
 )
@@ -41,6 +43,7 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
     previous_norm: dict[PositiveInt, FiniteFloat] = Field(default_factory=dict, max_length=20_000)
     second_norm: dict[PositiveInt, FiniteFloat] = Field(default_factory=dict, max_length=20_000)
+    rule_pack: RulePack | None = None
 
 
 class Match(BaseModel):
@@ -49,6 +52,8 @@ class Match(BaseModel):
     blue: list[PositiveInt] = Field(min_length=1, max_length=2)
     red_score: FiniteFloat | None = Field(ge=0)
     blue_score: FiniteFloat | None = Field(ge=0)
+    red_components: dict[str, FiniteFloat] | None = None
+    blue_components: dict[str, FiniteFloat] | None = None
 
     @model_validator(mode="after")
     def valid_match(self):
@@ -66,6 +71,7 @@ class Event(BaseModel):
     event_type: str
     roster: list[PositiveInt] = Field(min_length=4, max_length=128)
     matches: list[Match] = Field(max_length=1000)
+    partition_version: str = ""
 
     @property
     def key(self):
@@ -100,21 +106,31 @@ class Event(BaseModel):
                 )
 
 
-def prepare(source: dict, code: str) -> Event:
-    if not isinstance(source, dict) or set(source) != {"event", "teams", "schedule"}:
+def prepare(source: dict, code: str, pack: RulePack | None = None) -> Event:
+    if (
+        not isinstance(source, dict)
+        or not {"event", "teams", "schedule"} <= set(source)
+        or set(source) - {"event", "teams", "schedule", "scores"}
+    ):
         raise ValueError("season event needs event metadata, teams and schedule")
     event = source["event"]
     if event["code"] != code or event.get("remote") or event.get("hybrid"):
         raise ValueError("event code must match a non-remote, non-hybrid event")
     roster = [team["teamNumber"] for team in source["teams"]["teams"]]
-    return Event(
+    prepared = Event(
         code=code,
         event_id=event["eventId"],
         day=date.fromisoformat(event["dateStart"][:10]),
         event_type=event["typeName"],
         roster=roster,
         matches=qualification_matches(roster, source["schedule"]),
+        partition_version=version(pack),
     )
+    if pack is not None:
+        if "scores" not in source:
+            raise ValueError("component replay requires official score breakdowns")
+        attach(prepared.matches, source["scores"], pack)
+    return prepared
 
 
 def init_scale(season: int, scores: list[float]) -> Scale:
@@ -126,27 +142,31 @@ def init_scale(season: int, scores: list[float]) -> Scale:
 
 def priors(event: Event, season: int, history: dict, config: Config, scale: Scale) -> list[dict]:
     constants = for_season(season)
+    partition = partition_for(season, config.rule_pack)
     result = []
     for team in sorted(event.roster):
         old = history.get(team)
-        epa = (
-            old["epa"]
+        components = (
+            (old["components"] if config.rule_pack else {"__total__": old["epa"]})
             if old
-            else carry_forward(
-                previous_norm=config.previous_norm.get(team),
-                second_norm=config.second_norm.get(team),
-                carryover=constants.carryover,
-                init_scale=scale,
-            ).scaled
+            else initial_series(
+                carry_forward(
+                    previous_norm=config.previous_norm.get(team),
+                    second_norm=config.second_norm.get(team),
+                    carryover=constants.carryover,
+                    init_scale=scale,
+                ),
+                partition,
+            )
         )
-        gap = (event.day - date.fromisoformat(old["last_played"])).days if old else None
-        result.append(
-            {
-                "number": team,
-                "epa": epa + constants.layoff_boost.points(gap, scale),
-                "played": old["played"] if old else 0,
-            }
+        state = TeamState(team_number=team, series=dict(components), played=old["played"] if old else 0)
+        apply_layoff(
+            state, constants.layoff_boost, event.day, date.fromisoformat(old["last_played"]) if old else None, scale
         )
+        row = {"number": team, "epa": state.total, "played": state.played}
+        if config.rule_pack:
+            row["components"] = state.series
+        result.append(row)
     return result
 
 
@@ -156,7 +176,7 @@ def replay(event: Event, season: int, history: dict, config: Config, scale: Scal
     result = replay_season(
         matches,
         constants=constants,
-        partition=ResolvedPartition.total_only(season),
+        partition=partition_for(season, config.rule_pack),
         season_scale=None,
         init_scale=scale,
         layoff_boost=constants.layoff_boost,
@@ -165,12 +185,19 @@ def replay(event: Event, season: int, history: dict, config: Config, scale: Scal
         compute_norm=False,
         seed={
             team: TeamSeed(
-                series={"__total__": row["epa"]},
+                series=row["components"] if config.rule_pack else {"__total__": row["epa"]},
                 played=row["played"],
                 last_played=date.fromisoformat(row["last_played"]),
             )
             for team, row in history.items()
         },
+        breakdowns={
+            (match.match_id, side): getattr(prepared, f"{side.lower()}_components")
+            for match, prepared in zip(matches, (m for m in event.matches if m.red_score is not None), strict=True)
+            for side in ("RED", "BLUE")
+        }
+        if config.rule_pack
+        else None,
     )
     counts = Counter(team for match in matches for team in (*match.red.teams, *match.blue.teams))
     return [
@@ -179,6 +206,7 @@ def replay(event: Event, season: int, history: dict, config: Config, scale: Scal
             "epa": row.epa_scaled,
             "played": history.get(row.team_number, {}).get("played", 0) + counts[row.team_number],
             "last_played": event.day.isoformat(),
+            "components": row.components,
         }
         for row in result.rows
         if row.tag == TAG_POST_EVENT
@@ -195,11 +223,27 @@ async def history_for(db, season: int, event: Event) -> dict:
         .bind(json.dumps(event.roster), season, event.key)
         .all()
     )
-    return {row.team: {"epa": row.epa, "played": row.played, "last_played": row.last_played} for row in rows.results}
+    return {
+        row.team: {
+            "epa": row.epa,
+            "played": row.played,
+            "last_played": row.last_played,
+            "components": json.loads(row.components),
+        }
+        for row in rows.results
+    }
 
 
 async def state_for(db, season):
     return await db.prepare("SELECT * FROM season_run WHERE season = ?").bind(season).first()
+
+
+async def incompatible_event(db, season: int, config: Config):
+    return (
+        await db.prepare("SELECT event_code FROM season_event WHERE season = ? AND partition_version != ? LIMIT 1")
+        .bind(season, version(config.rule_pack))
+        .first()
+    )
 
 
 async def refresh_scale(db, season, state):
@@ -227,6 +271,10 @@ async def step(db, season, state):
             .run()
         )
         state = await state_for(db, season)
+    config = Config.model_validate_json(state.config)
+    incompatible = await incompatible_event(db, season, config)
+    if incompatible:
+        return {"error": f"reimport {incompatible.event_code} for the current rule pack before replay"}, 409
     if state.scale_dirty:
         if not await refresh_scale(db, season, state):
             return {"error": "season changed; retry"}, 409
@@ -244,9 +292,7 @@ async def step(db, season, state):
         return {"status": "complete", "revision": state.revision, "cursor": state.cursor}, 200
     event = Event.model_validate_json(row.document)
     history = await history_for(db, season, event)
-    ratings = replay(
-        event, season, history, Config.model_validate_json(state.config), Scale(**json.loads(state.init_scale))
-    )
+    ratings = replay(event, season, history, config, Scale(**json.loads(state.init_scale)))
     batch = await db.batch(
         [
             db.prepare(SAVE_RATINGS).bind(
@@ -277,7 +323,9 @@ async def handle(db, request, season: int, action: str | None, code: str | None)
         body = await request.text()
         if len(body.encode()) > 512_000:
             return {"error": "input exceeds 512000 bytes"}, 413
-        config = json.dumps(Config.model_validate_json(body).model_dump(mode="json"), sort_keys=True)
+        parsed = Config.model_validate_json(body)
+        partition_for(season, parsed.rule_pack)
+        config = json.dumps(parsed.model_dump(mode="json"), sort_keys=True, allow_nan=False)
         await (
             db.prepare(
                 "INSERT INTO season_run(season, config, engine_version) VALUES (?, ?, ?) "
@@ -296,6 +344,7 @@ async def handle(db, request, season: int, action: str | None, code: str | None)
             "cursor": state.cursor,
             "scale_dirty": bool(state.scale_dirty),
             "init_scale": json.loads(state.init_scale) if state.init_scale else None,
+            "components": list(partition_for(season, Config.model_validate_json(state.config).rule_pack).columns),
         }, 200
     if action == "step" and request.method == "POST":
         return await step(db, season, state)
@@ -304,18 +353,28 @@ async def handle(db, request, season: int, action: str | None, code: str | None)
         if len(body.encode()) > 512_000:
             return {"error": "input exceeds 512000 bytes"}, 413
         source = json.loads(body)
-        event = prepare(source, code)
+        event = prepare(source, code, Config.model_validate_json(state.config).rule_pack)
         await (
             db.prepare(
-                "INSERT INTO season_event(season, event_code, event_key, document, source) VALUES (?, ?, ?, ?, ?) "
+                "INSERT INTO season_event(season, event_code, event_key, document, source, partition_version) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(season, event_code) DO UPDATE SET event_key = excluded.event_key, "
-                "document = excluded.document, source = excluded.source"
+                "document = excluded.document, source = excluded.source, partition_version = excluded.partition_version"
             )
-            .bind(season, code, event.key, event.model_dump_json(), json.dumps(source, sort_keys=True, allow_nan=False))
+            .bind(
+                season,
+                code,
+                event.key,
+                event.model_dump_json(),
+                json.dumps(source, sort_keys=True, allow_nan=False),
+                event.partition_version,
+            )
             .run()
         )
         return {"event": code, "revision": (await state_for(db, season)).revision}, 200
     if action == "priors" and request.method == "GET":
+        if await incompatible_event(db, season, Config.model_validate_json(state.config)):
+            return {"error": "reimport the season events for the current rule pack"}, 409
         row = (
             await db.prepare("SELECT document FROM season_event WHERE season = ? AND event_code = ?")
             .bind(season, code)
