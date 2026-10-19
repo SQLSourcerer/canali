@@ -35,24 +35,39 @@ def version(pack: RulePack | None) -> str:
 def values(pack: RulePack, breakdown: dict, partition: ResolvedPartition | None = None) -> dict[str, float]:
     partition = partition or partition_for(pack.season, pack)
     by_name = {component.name: component for component in pack.components}
-    result = {}
-    for name, column in zip(partition.names, partition.columns, strict=True):
-        component = by_name[name]
-        if component.state_scoring is not None:
-            scoring = component.state_scoring
-            if any(source not in breakdown for source in scoring.states_from):
-                raise ValueError(f"missing robot state for {name}")
-            value = sum(scoring.points.get(breakdown[source], 0.0) for source in scoring.states_from)
-        elif name not in breakdown:
-            raise ValueError(f"missing scoring component {name}")
-        elif component.kind == "boolean":
-            if not isinstance(breakdown[name], bool):
-                raise ValueError(f"{name} must be boolean")
-            value = float(breakdown[name])
-        else:
-            value = breakdown[name]
-        result[column] = number(value, name, minimum=-math.inf)
-    return result
+    return {
+        column: _value(by_name, name, breakdown, set())
+        for name, column in zip(partition.names, partition.columns, strict=True)
+    }
+
+
+def component_value(pack: RulePack, name: str, breakdown: dict) -> float:
+    """Read a published scalar, including rule-pack recoveries for broken upstream totals."""
+    return _value({c.name: c for c in pack.components}, name, breakdown, set())
+
+
+def _value(by_name, name, breakdown, seen):
+    if name in seen or name not in by_name:
+        raise ValueError(f"unknown or cyclic scoring component {name}")
+    component = by_name[name]
+    if component.recovered_from:
+        value = sum(_value(by_name, part, breakdown, seen | {name}) for part in component.recovered_from)
+    elif component.state_scoring is not None:
+        scoring = component.state_scoring
+        if any(source not in breakdown for source in scoring.states_from):
+            raise ValueError(f"missing robot state for {name}")
+        value = sum(scoring.points.get(breakdown[source], 0.0) for source in scoring.states_from)
+    elif name not in breakdown:
+        raise ValueError(f"missing scoring component {name}")
+    elif component.kind == "boolean":
+        if not isinstance(breakdown[name], bool):
+            raise ValueError(f"{name} must be boolean")
+        value = float(breakdown[name])
+    elif component.kind == "numeric":
+        value = breakdown[name]
+    else:
+        raise ValueError(f"{name} is not a scalar scoring component")
+    return number(value, name, minimum=-math.inf)
 
 
 def attach(matches: list, scores: dict, pack: RulePack) -> None:

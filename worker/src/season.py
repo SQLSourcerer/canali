@@ -373,43 +373,50 @@ async def handle(db, request, season: int, action: str | None, code: str | None)
         )
         return {"event": code, "revision": (await state_for(db, season)).revision}, 200
     if action == "priors" and request.method == "GET":
-        if await incompatible_event(db, season, Config.model_validate_json(state.config)):
-            return {"error": "reimport the season events for the current rule pack"}, 409
-        row = (
-            await db.prepare("SELECT document FROM season_event WHERE season = ? AND event_code = ?")
-            .bind(season, code)
-            .first()
-        )
-        if row is None:
-            return {"error": "import this event into the season first"}, 404
-        event = Event.model_validate_json(row.document)
-        pending = (
-            await db.prepare(
-                "SELECT 1 AS pending FROM season_event WHERE season = ? AND event_key > ? AND event_key < ? LIMIT 1"
-            )
-            .bind(season, state.cursor, event.key)
-            .first()
-        )
-        if pending or state.scale_dirty or state.engine_version != ENGINE_VERSION:
-            return {"error": "replay preceding events before reading priors"}, 409
-        teams = priors(
-            event,
-            season,
-            await history_for(db, season, event),
-            Config.model_validate_json(state.config),
-            Scale(**json.loads(state.init_scale)),
-        )
-        current = await state_for(db, season)
-        if current.revision != state.revision or current.scale_dirty:
-            return {"error": "season changed; retry"}, 409
-        constants = for_season(season)
-        return {
-            "teams": teams,
-            "k": asdict(constants.k),
-            "m": asdict(constants.m),
-            "season_prior": {"season": season, "revision": state.revision},
-        }, 200
+        return await read_priors(db, season, code)
     return {"error": "method not allowed"}, 405
+
+
+async def read_priors(db, season: int, code: str) -> tuple[dict, int]:
+    state = await state_for(db, season)
+    if state is None:
+        return {"error": "configure the season first"}, 404
+    if await incompatible_event(db, season, Config.model_validate_json(state.config)):
+        return {"error": "reimport the season events for the current rule pack"}, 409
+    row = (
+        await db.prepare("SELECT document FROM season_event WHERE season = ? AND event_code = ?")
+        .bind(season, code)
+        .first()
+    )
+    if row is None:
+        return {"error": "import this event into the season first"}, 404
+    event = Event.model_validate_json(row.document)
+    pending = (
+        await db.prepare(
+            "SELECT 1 AS pending FROM season_event WHERE season = ? AND event_key > ? AND event_key < ? LIMIT 1"
+        )
+        .bind(season, state.cursor, event.key)
+        .first()
+    )
+    if pending or state.scale_dirty or state.engine_version != ENGINE_VERSION:
+        return {"error": "replay preceding events before reading priors"}, 409
+    teams = priors(
+        event,
+        season,
+        await history_for(db, season, event),
+        Config.model_validate_json(state.config),
+        Scale(**json.loads(state.init_scale)),
+    )
+    current = await state_for(db, season)
+    if current.revision != state.revision or current.scale_dirty:
+        return {"error": "season changed; retry"}, 409
+    constants = for_season(season)
+    return {
+        "teams": teams,
+        "k": asdict(constants.k),
+        "m": asdict(constants.m),
+        "season_prior": {"season": season, "revision": state.revision},
+    }, 200
 
 
 def source_current(alias: str) -> str:
@@ -417,7 +424,7 @@ def source_current(alias: str) -> str:
     if re.fullmatch(r"[a-z]+", alias) is None:
         raise ValueError("invalid SQL alias")
     return (
-        f"(json_type({alias}.document, '$.season_prior') IS NULL OR EXISTS "
+        f"(json_extract({alias}.document, '$.season_prior') IS NULL OR EXISTS "
         f"(SELECT 1 FROM season_run s WHERE s.season = json_extract({alias}.document, '$.season_prior.season') "
         f"AND s.revision = json_extract({alias}.document, '$.season_prior.revision') "
         f"AND s.scale_dirty = 0 AND s.engine_version = '{ENGINE_VERSION}'))"

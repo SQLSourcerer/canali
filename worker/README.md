@@ -5,6 +5,7 @@ EPA/pRidge totals and match forecasts, plus the complete single-event Monte Carl
 playoffs, judged awards and advancement. A native importer fetches one event's official FIRST qualification data
 without Postgres. D1 can replay an imported season corpus to supply pre-event total and component EPA priors.
 Fitted simulation models are still prepared separately.
+Qualification-stage snapshots can be assembled directly from the imported event and its D1 component history.
 
 ## Run locally
 
@@ -159,8 +160,53 @@ This prevents mixing component definitions or replaying old total-only inputs as
 prior-season normalized ratings restarts replay without requiring a source reimport.
 
 `import_event.py --season-priors` also carries component priors into its saved input, while its qualification calculation
-still updates totals only. Building complete Monte Carlo field snapshots from these component priors is a separate
-step; the `/forecasts` endpoint continues to accept prepared snapshots.
+still updates totals only. Use the snapshot assembler below to connect component ratings to the full event simulator.
+
+## Assemble a qualification-stage forecast
+
+After importing and replaying a component corpus, run this from the repository root:
+
+```powershell
+uv run python worker/assemble_forecast.py 2025 USNJCMPPKWY --models worker/fixtures/forecast.json --context worker/fixtures/forecast-context.json --through 6 --run
+```
+
+The Worker builds a snapshot from the target event in D1. It starts with the teams' pre-event component priors,
+applies the native EPA updates through the chosen qualification cutoff, and combines the resulting ratings with the
+official schedule, final scores, bonus RPs, ranking tiebreakers, surrogate flags and disqualifications. Cities, team
+ages and rookie status come from the official team roster. Rule-pack recoveries reconstruct derived fields such as
+DECODE's `preFoulTotal` instead of trusting its published zero.
+
+`--through` counts scored qualification matches in increasing match-number order. The example keeps the first six
+of the division's 30 qualifications fixed and simulates the remainder. Later results, bonus RPs and DQs are masked
+out of the snapshot and do not update its current-event ratings. `--through 0` starts before qualifications; before a
+schedule is published, the simulator generates one. For historical backtests, supply models, context and season
+initialization appropriate to the cutoff date; this option only truncates current-event match updates and progress.
+
+Omitting `--through` uses all currently scored qualifications. The native command checks FIRST's published alliances
+to identify the event stage. Once alliance selection is published, assembly requires an earlier qualification cutoff.
+Published alliance selections, playoff progress and playoff EPA updates are not assembled in this slice. The prepared
+snapshot endpoint still accepts those inputs when supplied separately.
+
+`--models` accepts a `ModelsInput` JSON object or a prepared snapshot containing `models`. With a prepared snapshot it
+also reads its seed, convergence settings and matches-per-team setting; its field, schedule and results are ignored.
+Score, RP, selection and award coefficients still need external calibration. The example's coefficients are demo
+inputs, and its three-event corpus is incomplete.
+
+`--context` is required and supplies `allied`, decayed award `history`, `inspire_won_before` and `slots`, using the same
+formats as `EventField` and `Slots`. Prepare these attributes for the event's start date; history from later events
+would bias the forecast. The supplied `forecast-context.json` explicitly assumes no previous alliance/award history,
+no prior Inspire winners and no advancement slots. Its empty assumptions demonstrate the pipeline and should be
+replaced with real context for meaningful advancement forecasts. Context team keys must belong to the event roster;
+already-advanced teams and historical alliance partners may include teams outside the field.
+
+The snapshot is saved under `/forecasts/2025-USNJCMPPKWY`, with its qualification cutoff and season revision, and
+archived in `var/worker-forecast/2025-USNJCMPPKWY/snapshot.json`. Add `--run` to resume bounded Monte Carlo requests until
+convergence or exhaustion and save `result.json` alongside it. Identical snapshots preserve their input revision,
+checkpoint and result, so repeating an interrupted command can resume its computation.
+
+A changed season revision or engine hides linked forecast checkpoints and results and rejects stale publication.
+Finish season replay and reassemble to refresh them. This conservatively invalidates a snapshot even when a correction
+was to a qualification after its cutoff. Prepared snapshots without a season dependency remain supported.
 
 ## Complete event forecasts
 
@@ -176,8 +222,8 @@ model coefficients. It illustrates the snapshot accepted by `/forecasts/{code}`:
 - `slots`: advancement counts and already-advanced teams, or null if the event offers no slots.
 - `seed`, `tolerance`, `min_iterations`, `max_iterations`: reproducibility, convergence and the total work budget.
 
-The caller supplies the component ratings to simulate; these are not automatically connected to the separate
-qualification-total calculation. Integer team keys are represented as strings in JSON. RP curve recoveries use
+The assembler supplies component ratings for qualification-stage snapshots, and callers can also upload prepared
+snapshots directly. Integer team keys are represented as strings in JSON. RP curve recoveries use
 `{"kind": "identity"}`, `{"kind": "ratio", "value": 0.25}`, or `{"kind": "floor_divide", "value": 20}`.
 
 Each `/step` request advances at most 32 event iterations and checks a two-second elapsed-time budget between
@@ -206,12 +252,13 @@ HTTP 409; clients can reread the status and retry. Only the latest run for an ev
 | `PUT /seasons/{year}/events/{code}` | Import event metadata, teams, qualification schedule and optional score breakdowns |
 | `POST /seasons/{year}/step` | Rate one event and checkpoint, or report the imported corpus complete |
 | `GET /seasons/{year}/priors/{code}` | Read roster total/component priors, K/M schedules and their season revision |
+| `POST /seasons/{year}/forecasts/{code}` | Assemble and save a qualification snapshot from models and explicit context |
 | `PUT /imports/{season}-{code}` | Atomically import FIRST payloads and explicit model parameters |
 | `GET /imports/{season}-{code}` | Read the current imported source payloads and parameters, or 404 |
 | `PUT /events/{code}` | Validate and save prepared inputs at a new revision |
 | `POST /events/{code}/run` | Recompute from the supplied priors and save the current revision's result |
 | `GET /events/{code}` | Read the current revision's completed result, or 404 |
-| `PUT /forecasts/{code}` | Validate and save a complete event snapshot at a new revision |
+| `PUT /forecasts/{code}` | Validate and save a complete snapshot; identical documents preserve the revision |
 | `POST /forecasts/{code}/step` | Advance or resume one bounded Monte Carlo batch |
 | `GET /forecasts/{code}` | Read current progress or the completed event forecast, or 404 |
 
@@ -231,7 +278,7 @@ configured. Local success does not establish that the engine fits the production
 ```powershell
 uv run python prepare.py
 uv run pytest
-uv run ruff check src/entry.py src/compute.py src/snapshot.py src/forecast.py src/forecast_store.py src/first_event.py src/season.py src/components.py prepare.py tests smoke.py import_event.py replay_season.py
+uv run ruff check src/entry.py src/compute.py src/snapshot.py src/forecast.py src/forecast_store.py src/first_event.py src/season.py src/components.py src/assemble.py prepare.py tests smoke.py import_event.py replay_season.py assemble_forecast.py
 ```
 
 The unit tests check ratings against a closed-form ridge solution, simultaneous EPA updates, deterministic reruns
@@ -245,3 +292,7 @@ replays a synthetic season through real local D1, compares native pre-event and 
 Component tests compare individual series with native replay, cover state-scored and boolean fields, reject incomplete
 or inconsistent breakdowns without replacing valid data, and prevent mixed rule-pack fingerprints. The D1 smoke check
 exercises both total-only and component replay.
+Assembly tests verify native ratings at the cutoff, recovered scoring fields, station flags, roster attributes,
+masking of later outcomes, generated schedules, explicit context, identical-input resume, and stale-season rejection
+on snapshot writes, checkpoint writes and result reads. A SQLite-backed assembled forecast is compared with native
+simulation.

@@ -116,6 +116,11 @@ class ProgressInput(InputModel):
         )
 
 
+class SeasonPrior(InputModel):
+    season: int = Field(ge=2015)
+    revision: int = Field(ge=1)
+
+
 class EventSnapshot(InputModel):
     rule_pack: RulePack
     field: EventField
@@ -128,10 +133,14 @@ class EventSnapshot(InputModel):
     tolerance: float = Field(default=0.01, gt=0, le=0.5)
     min_iterations: int = Field(default=1000, ge=1, le=100_000)
     max_iterations: int = Field(default=10_000, ge=1, le=100_000)
+    season_prior: SeasonPrior | None = None
+    as_of_match: int | None = Field(default=None, ge=0, le=1000)
 
     @model_validator(mode="after")
     def check_event(self) -> Self:
         teams = set(self.field.predicted)
+        if self.season_prior is not None and self.season_prior.season != self.rule_pack.season:
+            raise ValueError("season dependency must match the rule pack")
         if not 4 <= len(teams) <= 128 or any(team <= 0 for team in teams):
             raise ValueError("field needs 4 to 128 positive team numbers")
         if any(not values or sum(values.values()) <= 0 for values in self.field.predicted.values()):

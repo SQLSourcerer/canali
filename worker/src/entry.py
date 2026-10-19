@@ -4,6 +4,7 @@ import json
 import re
 from urllib.parse import urlparse
 
+from assemble import handle as handle_assembly
 from compute import compute, validate
 from first_event import handle as handle_import
 from forecast_store import handle as handle_forecast
@@ -24,13 +25,18 @@ class Default(WorkerEntrypoint):
             import scipy
 
             return Response.json({"status": "ok", "numpy": numpy.__version__, "scipy": scipy.__version__})
-        season_route = re.fullmatch(r"/seasons/([0-9]{4})(?:/(step)|/(events|priors)/([A-Za-z0-9_-]{1,50}))?", path)
+        season_route = re.fullmatch(
+            r"/seasons/([0-9]{4})(?:/(step)|/(events|priors|forecasts)/([A-Za-z0-9_-]{1,50}))?", path
+        )
         if season_route is not None:
             year, step, action, code = season_route.groups()
             try:
                 if int(year) < 2015:
                     raise ValueError("season must be at least 2015")
-                report, status = await handle_season(self.env.DB, request, int(year), step or action, code)
+                if action == "forecasts":
+                    report, status = await handle_assembly(self.env.DB, request, int(year), code)
+                else:
+                    report, status = await handle_season(self.env.DB, request, int(year), step or action, code)
                 return Response.json(report, status=status)
             except (ValueError, KeyError, TypeError) as exc:
                 return Response.json({"error": str(exc)}, status=400)
