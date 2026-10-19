@@ -6,7 +6,7 @@ workers_dev = false
 
 [build]
 command = "python prepare.py"
-watch_dir = ["src", "../epa/src/epa/model.py", "../pridge/src/pridge/estimator.py", "../sim/src/sim", "../warehouse/src/warehouse/rules/model.py", "../warehouse/src/warehouse/tier.py"]
+watch_dir = ["src", "../epa/src/epa", "../pridge/src/pridge/estimator.py", "../sim/src/sim", "../warehouse/src/warehouse/rules", "../warehouse/src/warehouse/constants.py", "../warehouse/src/warehouse/tier.py"]
 
 [[d1_databases]]
 binding = "DB"

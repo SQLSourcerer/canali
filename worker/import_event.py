@@ -25,6 +25,7 @@ def main():
         "--initial-epa", type=float, help="Explicitly replace priors with a uniform rating and zero history"
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:8787")
+    parser.add_argument("--season-priors", action="store_true", help="Use the local season replay's pre-event ratings")
     args = parser.parse_args()
     url = urlparse(args.base_url)
     if url.scheme != "http" or url.hostname not in ("127.0.0.1", "localhost", "::1") or url.path not in ("", "/"):
@@ -33,8 +34,16 @@ def main():
         parser.error("invalid season or event code")
     if args.initial_epa is not None and (not math.isfinite(args.initial_epa) or args.initial_epa < 0):
         parser.error("--initial-epa must be finite and nonnegative")
+    if args.season_priors and args.initial_epa is not None:
+        parser.error("--season-priors cannot be combined with --initial-epa")
     parameters = json.loads(args.parameters.read_text(encoding="utf-8"))
     parameters.pop("matches", None)
+    if args.season_priors:
+        with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=120) as worker:
+            response = worker.get(f"/seasons/{args.season}/priors/{args.event_code}")
+            if response.status_code != 200:
+                raise SystemExit(f"Season priors unavailable (HTTP {response.status_code}): {response.text}")
+            parameters.update(response.json())
     # Reuse authentication, rate limiting, retries and pagination without a Postgres connection.
     with FtcEventsClient() as client:
         teams = client.event_teams(args.season, args.event_code)
@@ -42,6 +51,7 @@ def main():
     if teams.status != 200 or schedule.status != 200:
         parser.error(f"FIRST returned HTTP {teams.status}/{schedule.status}; nothing imported")
     if args.initial_epa is not None:
+        parameters.pop("season_prior", None)
         parameters["teams"] = [
             {"number": team["teamNumber"], "epa": args.initial_epa, "played": 0} for team in teams.data["teams"]
         ]

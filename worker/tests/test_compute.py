@@ -26,6 +26,12 @@ def test_ratings_match_the_closed_form_for_two_disjoint_alliances(event):
     assert forecast["p_red_win"] + forecast["p_blue_win"] + forecast["p_tie"] == pytest.approx(1)
 
 
+def test_finite_negative_priors_from_native_epa_are_accepted(event):
+    event["teams"][0]["epa"] = -10
+    result = compute(event)
+    assert result["teams"][0]["epa"] == pytest.approx(18)
+
+
 def test_opponent_adjustment_uses_both_alliances_before_either_update(event):
     event["m"]["values"] = [0.5]
     ratings = compute(event)["teams"]

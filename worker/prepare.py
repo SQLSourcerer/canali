@@ -6,7 +6,7 @@ from shutil import copyfile
 
 ROOT = Path(__file__).resolve().parent
 MODULES = {
-    "epa": ["model.py"],
+    "epa": ["model.py", "constants.py", "corpus.py", "evaluate.py", "norm.py", "partition.py", "replay.py", "scale.py"],
     "pridge": ["estimator.py"],
     "sim": [
         "score.py",
@@ -26,7 +26,7 @@ MODULES = {
         "rp_probability.py",
         "rp_source.py",
     ],
-    "warehouse": ["tier.py", "rules/__init__.py", "rules/model.py"],
+    "warehouse": ["constants.py", "tier.py", "rules/__init__.py", "rules/model.py", "rules/partition.py"],
 }
 digest = hashlib.sha256()
 for package, modules in MODULES.items():
@@ -39,7 +39,7 @@ for package, modules in MODULES.items():
             copyfile(source / name, target / name)
         digest.update(f"{package}/{name}".encode())
         digest.update((source / name).read_bytes())
-for name in ("forecast.py", "snapshot.py", "forecast_store.py"):
+for name in ("forecast.py", "snapshot.py", "forecast_store.py", "season.py", "first_event.py"):
     path = ROOT / "src" / name
     if path.exists():
         digest.update(path.read_bytes())

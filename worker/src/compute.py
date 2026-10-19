@@ -50,7 +50,7 @@ def validate(document: dict) -> None:
         if team_number in known:
             raise ValueError("team numbers must be unique")
         known.add(team_number)
-        number(team["epa"], "EPA")
+        number(team["epa"], "EPA", minimum=-math.inf)
         integer(team["played"], "matches played")
     previous = 0
     for match in matches:
@@ -88,6 +88,10 @@ def validate(document: dict) -> None:
     if draws > 100_000:
         raise ValueError("draws must not exceed 100000")
     integer(document["seed"], "seed")
+    if "season_prior" in document:
+        prior = document["season_prior"]
+        integer(prior["season"], "prior season", minimum=2015)
+        integer(prior["revision"], "prior revision", minimum=1)
     model = ScoreModel(**document["score_model"])
     for name in ("intercept", "slope", "dispersion", "dof", "skew", "foul_mean", "foul_variance"):
         number(getattr(model, name), name, minimum=-1e6 if name == "intercept" else 0)

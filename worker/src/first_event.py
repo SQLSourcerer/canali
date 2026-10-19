@@ -26,11 +26,20 @@ def prepare(source: dict, code: str) -> dict:
     parameters = source["parameters"]
     if len(set(roster)) != len(roster) or set(roster) != {t["number"] for t in parameters["teams"]}:
         raise ValueError("priors must match the official event roster exactly")
+    document = {**parameters, "matches": qualification_matches(roster, source["schedule"])}
+    validate(document)
+    return document
+
+
+def qualification_matches(roster: list[int], schedule: dict) -> list[dict]:
+    """Convert official stations and scores without inventing rating priors."""
     matches = []
-    for row in sorted(source["schedule"]["schedule"], key=lambda m: m["matchNumber"]):
+    for row in sorted(schedule["schedule"], key=lambda m: m["matchNumber"]):
         if row["tournamentLevel"] not in ("QUALIFICATION", "QUAL", "QUALS"):
             raise ValueError("import requires a qualification-only schedule")
         slots = row["teams"]
+        if not isinstance(slots, list) or any(not isinstance(t, dict) for t in slots):
+            raise ValueError("match teams must be station objects")
         if any(not isinstance(t.get("noShow", False), bool) for t in slots):
             raise ValueError("noShow must be boolean")
         stations = [t["station"] for t in slots]
@@ -56,9 +65,7 @@ def prepare(source: dict, code: str) -> dict:
                 None if final is None else number(final, "final score") - number(foul, "foul score")
             )
         matches.append(match)
-    document = {**parameters, "matches": matches}
-    validate(document)
-    return document
+    return matches
 
 
 async def handle(db, request, code: str) -> tuple[dict, int]:

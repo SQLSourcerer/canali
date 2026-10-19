@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 from compute import compute, validate
 from first_event import handle as handle_import
 from forecast_store import handle as handle_forecast
+from season import handle as handle_season
+from season import source_current
 from workers import Response, WorkerEntrypoint
 
 MAX_BODY = 512_000
@@ -22,6 +24,16 @@ class Default(WorkerEntrypoint):
             import scipy
 
             return Response.json({"status": "ok", "numpy": numpy.__version__, "scipy": scipy.__version__})
+        season_route = re.fullmatch(r"/seasons/([0-9]{4})(?:/(step)|/(events|priors)/([A-Za-z0-9_-]{1,50}))?", path)
+        if season_route is not None:
+            year, step, action, code = season_route.groups()
+            try:
+                if int(year) < 2015:
+                    raise ValueError("season must be at least 2015")
+                report, status = await handle_season(self.env.DB, request, int(year), step or action, code)
+                return Response.json(report, status=status)
+            except (ValueError, KeyError, TypeError) as exc:
+                return Response.json({"error": str(exc)}, status=400)
         import_route = re.fullmatch(r"/imports/([A-Za-z0-9_-]{1,64})", path)
         if import_route is not None:
             try:
@@ -62,7 +74,9 @@ class Default(WorkerEntrypoint):
                 return Response.json({"event": code, "revision": row.revision})
             if request.method == "POST" and run:
                 row = (
-                    await db.prepare("SELECT revision, document FROM event_input WHERE event_code = ?")
+                    await db.prepare(
+                        "SELECT revision, document FROM event_input i WHERE event_code = ? AND " + source_current("i")
+                    )
                     .bind(code)
                     .first()
                 )
@@ -73,7 +87,9 @@ class Default(WorkerEntrypoint):
                 saved = (
                     await db.prepare(
                         "INSERT INTO event_result(event_code, input_revision, document) "
-                        "SELECT event_code, revision, ? FROM event_input WHERE event_code = ? AND revision = ? "
+                        "SELECT event_code, revision, ? FROM event_input i WHERE event_code = ? AND revision = ? AND "
+                        + source_current("i")
+                        + " "
                         "ON CONFLICT(event_code) DO UPDATE SET input_revision = excluded.input_revision, "
                         "document = excluded.document, computed_at = CURRENT_TIMESTAMP RETURNING input_revision"
                     )
@@ -87,7 +103,8 @@ class Default(WorkerEntrypoint):
                 row = (
                     await db.prepare(
                         "SELECT r.document, r.input_revision FROM event_result r JOIN event_input i "
-                        "ON i.event_code = r.event_code AND i.revision = r.input_revision WHERE r.event_code = ?"
+                        "ON i.event_code = r.event_code AND i.revision = r.input_revision WHERE r.event_code = ? AND "
+                        + source_current("i")
                     )
                     .bind(code)
                     .first()
