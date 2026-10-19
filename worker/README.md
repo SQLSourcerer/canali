@@ -2,7 +2,8 @@
 
 Runs prepared event inputs through the existing Python models, saving results in local D1. It supports qualification
 EPA/pRidge totals and match forecasts, plus the complete single-event Monte Carlo: standings, alliance selection,
-playoffs, judged awards and advancement. The Postgres warehouse continues to prepare source data separately.
+playoffs, judged awards and advancement. A native importer fetches one event's official FIRST qualification data
+without Postgres. Season-wide priors and calibrated models are still prepared separately.
 
 ## Run locally
 
@@ -43,8 +44,40 @@ rather than the ignored copies under `src/`. Package and runtime support must al
 
 The EPA and pRidge calculations use the supplied priors; initialization, layoff adjustment and season normalization
 must happen before preparing those inputs. One or two rated teams per alliance are supported. The prototype computes
-total ratings only. Component rating updates, ingestion, weekly calibration and regional season simulations have not
+total ratings only. Component rating updates, season ingestion, weekly calibration and regional season simulations have not
 yet been ported.
+
+## Import a FIRST event
+
+Save `WAREHOUSE_FTC_EVENTS_USERNAME` and `WAREHOUSE_FTC_EVENTS_TOKEN` in `warehouse/.env`. From the repository root,
+use the native workspace environment (Python 3.12), with the local Worker running and migrations applied:
+
+```powershell
+uv run python worker/import_event.py 2025 USNJCMPPKWY --parameters worker/fixtures/event.json --initial-epa 100
+```
+
+This example uses a completed 24-team division, explicit uniform EPA priors and the synthetic fixture's calibration.
+It demonstrates ingestion and computation; its ratings are not season-calibrated estimates. For meaningful ratings,
+provide a prepared event JSON with the correct pre-event `teams` priors, K/M schedules, ridge penalty and score model,
+and omit `--initial-epa`. The importer replaces that file's `matches` with official qualification results.
+
+The native command reuses the warehouse client's authentication, pagination, pacing and retry handling. Credentials
+stay in the native process; the Worker receives event data and model parameters. It imports the team's roster and
+qualification hybrid schedule, subtracts the opponent's committed foul points from each final alliance score, includes
+surrogate teams and excludes no-shows from rating updates. It rejects incomplete scores, missing foul totals, duplicate stations,
+roster mismatches and matches with an entirely absent alliance. Unplayed matches retain null scores. For divided
+championships, choose the division's event code; the parent event may have no qualification schedule.
+
+D1 atomically retains the latest source payloads and prepared input under a season-qualified key, such as
+`2025-USNJCMPPKWY`. Repeating identical data and parameters preserves the revision and published result. A source or
+parameter change increments the revision and hides the previous result until recomputed. Directly replacing prepared
+inputs through `/events/{code}` clears their previous source attribution. Historical source versions are not retained.
+
+The command also saves `source.json` and `result.json` in the ignored `var/worker-import/{season}-{code}/` directory.
+The saved source document can be replayed with `PUT /imports/{season}-{code}` without another FIRST request. There is
+no polling or scheduled ingestion yet. Source fetching runs natively; parsing, validation and rating computation run
+inside the Python Worker. Complete event Monte Carlo snapshots still require separately prepared component ratings,
+event progress and fitted models.
 
 ## Complete event forecasts
 
@@ -85,6 +118,8 @@ HTTP 409; clients can reread the status and retry. Only the latest run for an ev
 | Request | Result |
 | --- | --- |
 | `GET /health` | Runtime package versions |
+| `PUT /imports/{season}-{code}` | Atomically import FIRST payloads and explicit model parameters |
+| `GET /imports/{season}-{code}` | Read the current imported source payloads and parameters, or 404 |
 | `PUT /events/{code}` | Validate and save prepared inputs at a new revision |
 | `POST /events/{code}/run` | Recompute from the supplied priors and save the current revision's result |
 | `GET /events/{code}` | Read the current revision's completed result, or 404 |
@@ -108,13 +143,11 @@ configured. Local success does not establish that the engine fits the production
 ```powershell
 uv run python prepare.py
 uv run pytest
-uv run ruff check src/entry.py src/compute.py src/snapshot.py src/forecast.py src/forecast_store.py prepare.py tests smoke.py
+uv run ruff check src/entry.py src/compute.py src/snapshot.py src/forecast.py src/forecast_store.py src/first_event.py prepare.py tests smoke.py import_event.py
 ```
 
 The unit tests check ratings against a closed-form ridge solution, simultaneous EPA updates, deterministic reruns
 and invalid inputs. Event tests compare JSON checkpoint/resume with the native runner, generated schedules and fixed
 published alliances. SQL tests reject duplicate writes and obsolete revisions and engines. `smoke.py` additionally
-exercises the real local Worker and D1 binding.
-
-Fresh FTC Events ingestion will need its username and token when that part is ported. Preserve those as local
-secrets rather than putting credentials in fixtures or source files.
+exercises the real local Worker and D1 binding, including unchanged imports, source corrections and clearing obsolete
+source attribution. Import tests cover foul subtraction, missing results, station order, no-shows and surrogates.

@@ -43,8 +43,58 @@ def main():
     fixture["matches"][0]["red"] = [1, 1]
     assert request("/events/SYNTH", "PUT", fixture)[0] == 400
     assert request("/events/SYNTH")[1] == corrected
+    check_import()
     check_forecast()
     print("Local Worker/D1 smoke test passed: ratings, forecasts, reruns, corrections and input validation.")
+
+
+def check_import():
+    document = json.loads((Path(__file__).parent / "fixtures" / "event.json").read_text())
+    schedule = []
+    for match in document.pop("matches"):
+        schedule.append(
+            {
+                "matchNumber": match["ordinal"],
+                "tournamentLevel": "QUALIFICATION",
+                "teams": [
+                    {"teamNumber": team, "station": f"{side.title()}{index}"}
+                    for side in ("red", "blue")
+                    for index, team in enumerate(match[side], 1)
+                ],
+                "scoreRedFinal": match["red_score"],
+                "scoreRedFoul": 0,
+                "scoreBlueFinal": match["blue_score"],
+                "scoreBlueFoul": 0,
+            }
+        )
+    source = {
+        "season": 2025,
+        "event_code": "IMPORT",
+        "parameters": document,
+        "teams": {"teams": [{"teamNumber": t["number"]} for t in document["teams"]]},
+        "schedule": {"schedule": schedule},
+    }
+    path = "/imports/2025-IMPORT"
+    status, uploaded = request(path, "PUT", source)
+    assert status == 200, uploaded
+    revision = uploaded["revision"]
+    assert request(path)[1]["source"] == source
+    result_path = "/events/2025-IMPORT"
+    status, report = request(result_path + "/run", "POST")
+    assert status == 200, report
+    assert [t["epa"] for t in report["result"]["teams"]] == [57, 57, 43, 43]
+    assert request(path, "PUT", source)[1]["revision"] == revision
+    assert request(result_path)[1] == report
+    source["schedule"]["schedule"][0]["scoreRedFinal"] += 10
+    assert request(path, "PUT", source)[1]["revision"] == revision + 1
+    assert request(result_path)[0] == 404
+    source["schedule"]["schedule"][0]["scoreRedFoul"] = None
+    assert request(path, "PUT", source)[0] == 400
+    assert request(path)[1]["revision"] == revision + 1
+    # A direct prepared-input replacement must not retain the old source attribution.
+    document["matches"] = json.loads((Path(__file__).parent / "fixtures" / "event.json").read_text())["matches"]
+    assert request(result_path, "PUT", document)[0] == 200
+    assert request(path)[0] == 404
 
 
 def check_forecast():

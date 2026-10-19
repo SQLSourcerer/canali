@@ -19,6 +19,7 @@ target-version = "py313"
 "src/compute.py" = ["PLR0912"]
 "src/entry.py" = ["PLR0911", "PLR0912"]
 "smoke.py" = ["T201"]
+"import_event.py" = ["T201"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

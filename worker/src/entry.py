@@ -5,6 +5,7 @@ import re
 from urllib.parse import urlparse
 
 from compute import compute, validate
+from first_event import handle as handle_import
 from forecast_store import handle as handle_forecast
 from workers import Response, WorkerEntrypoint
 
@@ -21,6 +22,13 @@ class Default(WorkerEntrypoint):
             import scipy
 
             return Response.json({"status": "ok", "numpy": numpy.__version__, "scipy": scipy.__version__})
+        import_route = re.fullmatch(r"/imports/([A-Za-z0-9_-]{1,64})", path)
+        if import_route is not None:
+            try:
+                report, status = await handle_import(self.env.DB, request, import_route[1])
+                return Response.json(report, status=status)
+            except (ValueError, KeyError, TypeError) as exc:
+                return Response.json({"error": str(exc)}, status=400)
         forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step)?", path)
         if forecast_route is not None:
             code, step = forecast_route.groups()
@@ -44,7 +52,8 @@ class Default(WorkerEntrypoint):
                 row = (
                     await db.prepare(
                         "INSERT INTO event_input(event_code, revision, document) VALUES (?, 1, ?) "
-                        "ON CONFLICT(event_code) DO UPDATE SET revision = revision + 1, document = excluded.document "
+                        "ON CONFLICT(event_code) DO UPDATE SET revision = revision + 1, document = excluded.document, "
+                        "source_document = NULL "
                         "RETURNING revision"
                     )
                     .bind(code, json.dumps(document, allow_nan=False))
