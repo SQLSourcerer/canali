@@ -33,7 +33,10 @@ flag on database commands.
 The Worker has its own Python 3.14 environment; the existing workspace remains on Python 3.12. Pywrangler prepares
 the WebAssembly dependencies separately in `python_modules/`, with versions recorded in `pylock.toml`. The custom
 build copies the numerical modules and rule-pack parser from their existing source directories; edit those sources
-rather than the ignored copies under `src/`. Package and runtime support must also be checked on Cloudflare before deployment.
+rather than the ignored copies under `src/`. To fit the upload limit, the bundle excludes dependency test suites,
+bytecode and unused SciPy subpackages. Model fitting and normalization fitting remain native; the Worker runs
+supplied coefficients using NumPy, `scipy.special` and its linear-algebra support. Package and runtime support must also be checked
+on Cloudflare before deployment.
 
 ## Event input
 
@@ -270,15 +273,100 @@ Inputs are capped at 128 teams, 1,000 matches and 512,000 bytes. Rule-pack brack
 limit. Independent match forecasts use score-draw batches of 256. Event input is buffered as one bounded JSON document.
 Season replay keeps a bounded initialization prefix and one event in memory, rather than buffering all season matches.
 
-This is an unauthenticated local development endpoint. Remote publication and public mutation endpoints are not
-configured. Local success does not establish that the engine fits the production 128 MB memory limit.
+The default configuration permits unauthenticated requests only on loopback hostnames. The separate benchmark
+environment requires a bearer token for every request, including reads and health checks. Local success does not
+establish that the engine fits the production 128 MB memory limit.
+
+## Hosted benchmark
+
+The project's deployed benchmark is `https://canali-benchmark.mjhanson.workers.dev`; it requires the benchmark token.
+
+The `benchmark` environment is an opt-in deployment with its own D1 database, a required `BENCHMARK_TOKEN` secret,
+and invocation logs. It uses a workers.dev address, with preview URLs disabled. It is configured for Workers Paid,
+with `cpu_ms = 5000` to cap requests at five CPU seconds. The free plan can be used for deployment and basic checks
+after removing that setting, but its 10 ms CPU limit may stop simulation requests. The configured cap bounds one invocation;
+it is not an account spending cap.
+Neither local development nor a dry-run build requires a paid subscription or creates remote resources.
+
+First check the bundle locally, from `worker/`:
+
+```powershell
+uv run pywrangler deploy --env benchmark --dry-run --outdir ../var/worker-benchmark/build
+```
+
+The checked-in benchmark database ID belongs to the project's Cloudflare account. Reuse it for this account.
+For another account, log in and create a separate database:
+
+```powershell
+npx wrangler login
+uv run pywrangler d1 create canali-benchmark
+```
+
+For that new account, replace `database_id` under `env.benchmark.d1_databases` in `wrangler.toml` with the returned UUID.
+Leave the local binding unchanged. Apply migrations to the benchmark database and configure a random secret of at
+least 32 characters, kept in your password manager. PowerShell's masked prompt avoids putting it in command history:
+
+```powershell
+uv run pywrangler d1 migrations apply canali-benchmark --env benchmark --remote
+$env:CANALI_BENCHMARK_TOKEN = Read-Host 'Benchmark token' -MaskInput
+$env:CANALI_BENCHMARK_TOKEN | uv run pywrangler secret put BENCHMARK_TOKEN --env benchmark
+uv run pywrangler deploy --env benchmark
+```
+
+The Worker rejects all requests until the secret is configured correctly. FIRST credentials stay in the native
+importer; they are not needed by the deployed benchmark. This environment is for private testing, not public traffic.
+If a benchmark token is already configured, reuse it rather than replacing it. The local `.dev.vars.benchmark` file
+is ignored by Git and can hold the same token for local testing. Keep a copy in your password manager; Cloudflare
+does not return the saved secret's value.
+
+Use the real snapshot produced by the local assembly command, or `fixtures/forecast.json` for a synthetic trial:
+
+```powershell
+uv run python benchmark.py ../var/worker-forecast/2025-USNJCMPPKWY/snapshot.json --base-url https://canali-benchmark.YOUR-SUBDOMAIN.workers.dev
+```
+
+The benchmark uploads a frozen snapshot without its local D1 season-revision dependency. It runs sequential batches,
+stops after at most 64 step requests by default, and saves timings, HTTP statuses, Cloudflare ray IDs, progress and the
+final forecast under `var/worker-benchmark/report.json`. Failures also leave a report. It does not retry requests
+automatically. To resume after a failure or request budget, pass the report's event key with `--event`; uploading the
+same snapshot preserves its checkpoint. Omitting `--event` creates a fresh run. Use `--output` to keep separate reports.
+An `exhausted` result means the iteration budget was reached before convergence, rather than a runtime failure.
+
+Elapsed timings include network and D1 waits; they are not CPU measurements. While running, use another terminal:
+
+```powershell
+uv run pywrangler tail --env benchmark --format json
+```
+
+Inspect the benchmark Worker's invocation logs and metrics in Workers & Pages for CPU time, wall time and resource
+errors, and the benchmark D1 database's metrics for rows read and written. Use the report's timestamps, event path and
+ray IDs to identify the test traffic. Compare total deployed CPU and D1 usage across a fresh complete run, then scale
+by the expected number of event refreshes when estimating cost. The frozen-snapshot benchmark measures forecast
+execution and checkpointing; season replay, assembly and ingestion need separate deployed measurements.
+Cloudflare does not expose a reliable per-request peak-memory counter here: successful execution tests whether this
+case fits, while resource-limit errors require further diagnosis. Repeated requests are warm-runtime measurements;
+the first request may include initialization, but is not guaranteed to be a cold start.
+
+For an authenticated local trial, put `BENCHMARK_TOKEN="your-random-token"` in the ignored `.dev.vars.benchmark`,
+set `CANALI_BENCHMARK_TOKEN` to the same value in the client terminal, and run:
+
+```powershell
+uv run pywrangler d1 migrations apply canali-benchmark --env benchmark --local
+uv run pywrangler dev --env benchmark --ip 127.0.0.1 --port 8788
+```
+
+Then use `benchmark.py --base-url http://127.0.0.1:8788` with either snapshot. This verifies authentication and database
+isolation locally; configured CPU limits are enforced only on Cloudflare.
+See Cloudflare's [configuration](https://developers.cloudflare.com/workers/wrangler/configuration/),
+[metrics](https://developers.cloudflare.com/workers/observability/metrics-and-analytics/) and
+[D1 pricing and usage](https://developers.cloudflare.com/d1/platform/pricing/) documentation.
 
 ## Tests
 
 ```powershell
 uv run python prepare.py
 uv run pytest
-uv run ruff check src/entry.py src/compute.py src/snapshot.py src/forecast.py src/forecast_store.py src/first_event.py src/season.py src/components.py src/assemble.py prepare.py tests smoke.py import_event.py replay_season.py assemble_forecast.py
+uv run ruff check src/entry.py src/access.py src/compute.py src/snapshot.py src/forecast.py src/forecast_store.py src/first_event.py src/season.py src/components.py src/assemble.py prepare.py tests smoke.py import_event.py replay_season.py assemble_forecast.py benchmark.py
 ```
 
 The unit tests check ratings against a closed-form ridge solution, simultaneous EPA updates, deterministic reruns
@@ -296,3 +384,5 @@ Assembly tests verify native ratings at the cutoff, recovered scoring fields, st
 masking of later outcomes, generated schedules, explicit context, identical-input resume, and stale-season rejection
 on snapshot writes, checkpoint writes and result reads. A SQLite-backed assembled forecast is compared with native
 simulation.
+Access tests cover fail-closed hosted authentication and loopback-only local access. Benchmark client tests cover
+progress, request budgets and HTTP failures.

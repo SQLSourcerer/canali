@@ -9,4 +9,5 @@ src/pridge/
 src/sim/
 src/warehouse/
 src/engine_version.py
-.dev.vars
+.dev.vars*
+.env*

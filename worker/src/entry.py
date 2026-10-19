@@ -1,9 +1,10 @@
-"""Local-only D1 adapter for the event-computation prototype."""
+"""D1 adapter for local computation and authenticated hosted benchmarks."""
 
 import json
 import re
 from urllib.parse import urlparse
 
+from access import allowed
 from assemble import handle as handle_assembly
 from compute import compute, validate
 from first_event import handle as handle_import
@@ -17,8 +18,8 @@ MAX_BODY = 512_000
 
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
-        if self.env.LOCAL_PROTOTYPE != "true":
-            return Response.json({"error": "local prototype is disabled"}, status=403)
+        if not allowed(self.env, request):
+            return Response.json({"error": "access denied"}, status=403)
         path = urlparse(request.url).path
         if path == "/health" and request.method == "GET":
             import numpy

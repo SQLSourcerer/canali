@@ -4,6 +4,16 @@ compatibility_date = "2026-10-19"
 compatibility_flags = ["python_workers"]
 workers_dev = false
 
+[python_modules]
+# Model fitting stays native; the Worker uses fitted coefficients and scipy.special.
+exclude = [
+  "**/*.pyc", "**/tests/**",
+  "scipy/cluster/**", "scipy/constants/**", "scipy/datasets/**", "scipy/differentiate/**",
+  "scipy/fft/**", "scipy/fftpack/**", "scipy/integrate/**", "scipy/interpolate/**",
+  "scipy/io/**", "scipy/misc/**", "scipy/ndimage/**", "scipy/odr/**",
+  "scipy/optimize/**", "scipy/signal/**", "scipy/sparse/**", "scipy/spatial/**", "scipy/stats/**",
+]
+
 [build]
 command = "python prepare.py"
 watch_dir = ["src", "../epa/src/epa", "../pridge/src/pridge/estimator.py", "../sim/src/sim", "../warehouse/src/warehouse/rules", "../warehouse/src/warehouse/constants.py", "../warehouse/src/warehouse/tier.py"]
@@ -17,3 +27,29 @@ migrations_dir = "migrations"
 
 [vars]
 LOCAL_PROTOTYPE = "true"
+
+# Opt in explicitly with --env benchmark; never shares the local database.
+[env.benchmark]
+name = "canali-benchmark"
+workers_dev = true
+preview_urls = false
+
+[env.benchmark.vars]
+LOCAL_PROTOTYPE = "false"
+BENCHMARK = "true"
+
+[env.benchmark.secrets]
+required = ["BENCHMARK_TOKEN"]
+
+[env.benchmark.limits]
+cpu_ms = 5000
+
+[env.benchmark.observability]
+enabled = true
+head_sampling_rate = 1
+
+[[env.benchmark.d1_databases]]
+binding = "DB"
+database_name = "canali-benchmark"
+database_id = "2a62a1d0-ae3a-4e6b-8ff7-4af5239f3ebe"
+migrations_dir = "migrations"
