@@ -5,6 +5,7 @@ import re
 from urllib.parse import urlparse
 
 from compute import compute, validate
+from forecast_store import handle as handle_forecast
 from workers import Response, WorkerEntrypoint
 
 MAX_BODY = 512_000
@@ -20,6 +21,14 @@ class Default(WorkerEntrypoint):
             import scipy
 
             return Response.json({"status": "ok", "numpy": numpy.__version__, "scipy": scipy.__version__})
+        forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step)?", path)
+        if forecast_route is not None:
+            code, step = forecast_route.groups()
+            try:
+                report, status = await handle_forecast(self.env.DB, request, code, bool(step))
+                return Response.json(report, status=status)
+            except (ValueError, KeyError, TypeError, NotImplementedError) as exc:
+                return Response.json({"error": str(exc)}, status=400)
         route = re.fullmatch(r"/events/([A-Za-z0-9_-]{1,64})(/run)?", path)
         if route is None:
             return Response.json({"error": "route not found"}, status=404)

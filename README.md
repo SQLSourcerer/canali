@@ -10,7 +10,7 @@ An FTC robotics statistics stack: raw data collected from external APIs; all der
 | [`sim/`](sim/README.md) | Monte Carlo simulation of an event and of a region's season: standings, alliance selection, the playoff, awards and advancement |
 | [`live/`](live/README.md) | The automated polling of a live event/season |
 | [`analysis/`](analysis/README.md) | Head-to-head comparison of pRidge, EPA, and OPR on the same alliances |
-| [`worker/`](worker/README.md) | Local Python Workers + D1 prototype for event qualification ratings and match forecasts |
+| [`worker/`](worker/README.md) | Local Python Workers + D1: event qualification ratings, match forecasts and resumable event simulations |
 
 The models read the warehouse and write ratings back to it. `analysis` reads matches and EPA ratings from the warehouse and refits pRidge and OPR itself.
 

@@ -108,6 +108,10 @@ tests/                  unit tests
 
 ## Versions
 
+The [local Python Worker](../worker/README.md) can run the event simulator from a prepared snapshot without Postgres.
+It checkpoints `EventAccumulator` counts and the random-generator state between bounded batches, preserving the
+native runner's convergence criterion and summary.
+
 `__version__` in `__init__.py` is the sim version stored on every run. Bump it whenever a run made now would not be
 comparable to one already stored under that version. The predictor's version is stored beside it.
 
