@@ -328,8 +328,77 @@ tbody td {
   font-weight: 600;
   color: #4a6140;
 }
-.delta {
+.comparison-delta {
+  display: block;
   font-size: 10px;
+  font-weight: 400;
+  color: #65725c;
+  margin-top: 3px;
+}
+.draft-notice {
+  padding: 10px 24px;
+  background: #f3edda;
+  color: #706039;
+  font-size: 11px;
+}
+.adjustment-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: #4b6140;
+}
+.text-button {
+  background: transparent;
+  text-decoration: underline;
+  padding: 6px 0;
+  color: #395633;
+  font-size: 11px;
+}
+.adjustments {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 22px;
+}
+.adjustments li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #ced6c0;
+  padding: 5px 0;
+  font-size: 12px;
+  color: #405837;
+}
+.share-scenario {
+  border-top: 1px solid #ced6c0;
+  margin-top: 18px;
+  padding-top: 15px;
+}
+.share-button {
+  background: #f6f8ef;
+  border: 1px solid #bcc9ad;
+  color: #395533;
+  padding: 9px 12px;
+  width: 100%;
+  font-size: 12px;
+}
+.share-scenario p,
+.scenario-link-notice {
+  font-size: 11px;
+  color: #586e4c;
+  line-height: 1.7;
+  margin: 10px 0;
+}
+.share-scenario input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #bcc9ad;
+  padding: 8px;
+  background: #f8f9f3;
+  font-size: 11px;
+  color: #34452e;
 }
 .table-note {
   border-top: 1px solid #e1e3d9;

@@ -97,10 +97,22 @@ an operator command, rather than a scheduled publication process.
 ## Custom simulations
 
 The first run downloads Pyodide 314.0.7, NumPy, SciPy and Pydantic from the pinned jsDelivr distribution. The page
-remains responsive during downloads and computation. A team-strength adjustment scales that team's scoring components
-proportionally between 50% and 150%; official played results and other team ratings remain fixed. The caller chooses
+remains responsive during downloads and computation. Each team-strength adjustment scales that team's scoring components
+proportionally between 50% and 150% in steps of 5%. Adjustments accumulate across teams; individual resets restore a
+team to 100%, and resetting the scenario clears all adjustments and custom results. Official played results and
+unadjusted team ratings remain fixed. The caller chooses
 1,000 or 5,000 iterations. Fixed-size exploratory runs report the simulator's standard error rather than promising a
 particular convergence tolerance. The random seed stays fixed to support comparisons.
+
+The custom table shows changes in average rank, captain probability and event-win probability relative to the shared
+forecast. Lower ranks are better; probability changes use percentage points. Editing inputs leaves the last completed
+result visible with a notice until another run completes, and its label retains the adjustments used for that run.
+
+"Share these inputs" copies a URL containing the team adjustments and simulation count, with a selectable link if
+clipboard access is unavailable. Links identify the exact source snapshot and simulation engine. Opening one loads
+the inputs for review without downloading Python or starting a run. A link for a changed snapshot or engine is rejected
+with an explanation; forecasts remain available for browsing. Links share inputs, not computed results, and may stop
+working after a publication changes. Scenario links are public and contain no credentials.
 
 The Python Worker and browser use the same `snapshot.py`, `forecast.advance` and simulator sources. Python is loaded
 only after the visitor requests a custom simulation. Progress arrives after each bounded batch. Cancel terminates the
@@ -126,8 +138,10 @@ From the repository root, Python publication and D1 export tests can be run with
 uv run pytest -c worker/pyproject.toml worker/tests frontend/tests/test_publication.py --basetemp var/frontend/test-tmp
 ```
 
-Model tests check scenario isolation, bounds, stable ranking and missing values. Browser verification should include
-an unchanged 100% scenario, changed strength, cancellation, another run after cancellation, and a narrow viewport.
+Model tests check multi-team isolation, bounds, URL round trips, snapshot and engine matching, comparison labels,
+stable ranking and missing values. Browser verification should include an unchanged 100% scenario, multiple changed
+teams, individual and whole-scenario resets, sharing and reopening inputs, stale links, cancellation, another run
+after cancellation, and a narrow viewport.
 After packaging changes, also compare browser results with the native result for an identical snapshot and seed.
 Route tests distinguish season, event and unknown URLs. Publication tests check deterministic engine bundles,
 matching revisions and rosters, missing forecasts and preservation of the existing catalog on failure. D1 export

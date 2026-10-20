@@ -4,6 +4,9 @@
     percent,
     rankedTeams,
     scenarioSnapshot,
+    scenarioUrl,
+    scenarioFromUrl,
+    forecastChange,
     formatDate,
     type Forecast,
     type PublishedEvent,
@@ -11,7 +14,7 @@
 
   let { event }: { event: PublishedEvent } = $props();
   let team = $state("");
-  let strength = $state(100);
+  let strengths = $state<Record<string, number>>({});
   let iterations = $state(1000);
   let running = $state(false);
   let progress = $state(0);
@@ -20,6 +23,13 @@
   let custom = $state<Forecast | null>(null);
   let customLabel = $state("");
   let viewingCustom = $state(false);
+  let customKey = $state("");
+  let sharedLink = $state("");
+  let shareMessage = $state("");
+  let linkMessage = $state("");
+  const draftKey = $derived(JSON.stringify([strengths, iterations]));
+  const edits = $derived(Object.entries(strengths));
+  const stale = $derived(custom !== null && customKey !== draftKey);
   let worker: Worker | null = null;
   const shown = $derived(viewingCustom && custom ? custom : event.forecast);
   const rows = $derived(shown ? rankedTeams(shown) : []);
@@ -33,6 +43,18 @@
 
   onMount(() => {
     team = rankedTeams(event.forecast)[0][0];
+    try {
+      const shared = scenarioFromUrl(location.search, event);
+      if (shared) {
+        strengths = shared.strengths;
+        iterations = shared.iterations;
+        team = Object.keys(strengths)[0] ?? team;
+        linkMessage =
+          "Shared scenario loaded. Review the adjustments, then run it on your device.";
+      }
+    } catch (error) {
+      simulationError = error instanceof Error ? error.message : String(error);
+    }
     return () => {
       worker?.terminate();
     };
@@ -44,11 +66,15 @@
     try {
       const snapshot = scenarioSnapshot(
         $state.snapshot(event.snapshot),
-        team,
-        strength,
+        $state.snapshot(strengths),
         iterations,
       );
-      const label = `Team ${team} · ${strength}% of published strength`;
+      const label = edits.length
+        ? edits
+            .map(([number, value]) => `Team ${number}: ${value}%`)
+            .join(" · ")
+        : "Published team strengths";
+      const key = draftKey;
       running = true;
       progress = 0;
       message = worker
@@ -77,6 +103,7 @@
           if (data.status === "complete") {
             custom = data.result;
             customLabel = label;
+            customKey = key;
             viewingCustom = true;
             running = false;
           } else if (data.status === "exhausted") {
@@ -104,9 +131,40 @@
     message = "Simulation cancelled.";
   }
 
-  function delta(value: number, baseline: number): string {
-    const difference = (value - baseline) * 100;
-    return `${difference > 0 ? "+" : ""}${difference.toFixed(1)} pp`;
+  function setStrength(number: string, value: number) {
+    const updated = { ...strengths };
+    if (value === 100) delete updated[number];
+    else updated[number] = value;
+    strengths = updated;
+    sharedLink = "";
+    shareMessage = "";
+  }
+
+  function resetAll() {
+    strengths = {};
+    iterations = 1000;
+    custom = null;
+    customKey = "";
+    viewingCustom = false;
+    message = "";
+    simulationError = "";
+    linkMessage = "";
+    sharedLink = "";
+    shareMessage = "";
+  }
+
+  async function shareScenario() {
+    try {
+      sharedLink = scenarioUrl(location.href, event, { strengths, iterations });
+      try {
+        await navigator.clipboard.writeText(sharedLink);
+        shareMessage = "Scenario link copied.";
+      } catch {
+        shareMessage = "Select and copy the link below.";
+      }
+    } catch (error) {
+      simulationError = error instanceof Error ? error.message : String(error);
+    }
   }
 </script>
 
@@ -203,7 +261,12 @@
       </div>
       {#if viewingCustom}<p class="scenario-label">
           {customLabel} · calculated on your device
-        </p>{/if}
+        </p>
+        {#if stale}<p class="draft-notice">
+            These results are from your last run. Run the edited inputs to
+            update them.
+          </p>{/if}
+      {/if}
       <div class="table-scroll">
         <table>
           <caption class="sr-only"
@@ -216,7 +279,7 @@
                 scope="col">Captain</th
               ><th scope="col">Picked</th><th scope="col">Win event</th><th
                 scope="col">Advance</th
-              >{#if viewingCustom}<th scope="col">Win change</th>{/if}</tr
+              ></tr
             ></thead
           >
           <tbody>
@@ -234,20 +297,43 @@
                   ></th
                 >
                 <td class="rank-value"
-                  >{summary.mean_rank?.toFixed(1) ?? "—"}</td
+                  ><span class="metric-value"
+                    >{summary.mean_rank?.toFixed(1) ?? "—"}</span
+                  >
+                  {#if viewingCustom}<span
+                      class="comparison-delta"
+                      aria-label="Rank change"
+                      >{forecastChange(
+                        summary.mean_rank,
+                        event.forecast.teams[number].mean_rank,
+                      )}</span
+                    >{/if}</td
                 >
-                <td>{percent(summary.p_captain)}</td><td
-                  >{percent(summary.p_selected)}</td
-                >
-                <td class="win-value">{percent(summary.p_win)}</td><td
-                  >{percent(summary.p_advance)}</td
-                >
-                {#if viewingCustom}<td class="delta"
-                    >{delta(
-                      summary.p_win,
-                      event.forecast.teams[number].p_win,
-                    )}</td
-                  >{/if}
+                <td
+                  ><span class="metric-value">{percent(summary.p_captain)}</span
+                  >
+                  {#if viewingCustom}<span
+                      class="comparison-delta"
+                      aria-label="Captain probability change"
+                      >{forecastChange(
+                        summary.p_captain,
+                        event.forecast.teams[number].p_captain,
+                        true,
+                      )}</span
+                    >{/if}</td
+                ><td>{percent(summary.p_selected)}</td>
+                <td class="win-value"
+                  ><span class="metric-value">{percent(summary.p_win)}</span>
+                  {#if viewingCustom}<span
+                      class="comparison-delta"
+                      aria-label="Win probability change"
+                      >{forecastChange(
+                        summary.p_win,
+                        event.forecast.teams[number].p_win,
+                        true,
+                      )}</span
+                    >{/if}</td
+                ><td>{percent(summary.p_advance)}</td>
               </tr>
             {/each}
           </tbody>
@@ -256,6 +342,8 @@
       <p class="table-note">
         Average rank is a simulation average, not a current standing. Select a
         team to explore a scenario.
+        {#if viewingCustom}Changes are scenario minus shared forecast; lower
+          ranks are better. Probability changes are in percentage points (pp).{/if}
       </p>
     </section>
 
@@ -264,8 +352,12 @@
       <p class="eyebrow">CHANGE AN ASSUMPTION</p>
       <h2 id="scenario-title">What if?</h2>
       <p class="scenario-intro">
-        Explore how a team’s performance could change the event.
+        Adjust several teams to explore how their performance could change the
+        event.
       </p>
+      {#if linkMessage}<p class="scenario-link-notice" role="status">
+          {linkMessage}
+        </p>{/if}
       <form
         onsubmit={(e) => {
           e.preventDefault();
@@ -280,7 +372,7 @@
         >
         <div class="strength-label">
           <label for="strength">Predicted strength</label><output for="strength"
-            >{strength}%</output
+            >{strengths[team] ?? 100}%</output
           >
         </div>
         <input
@@ -289,7 +381,8 @@
           min="50"
           max="150"
           step="5"
-          bind:value={strength}
+          value={strengths[team] ?? 100}
+          oninput={(e) => setStrength(team, Number(e.currentTarget.value))}
           disabled={running}
         />
         <div class="range-labels">
@@ -297,10 +390,42 @@
         </div>
         <p class="field-note">
           Scales this team’s scoring components equally. Played matches stay
-          fixed.
+          fixed. Select another team to add an adjustment.
         </p>
+        <div class="adjustment-heading">
+          <span>Adjusted teams · {edits.length}</span>
+          <button
+            type="button"
+            class="text-button"
+            onclick={resetAll}
+            disabled={running}>Reset scenario</button
+          >
+        </div>
+        {#if edits.length}<ul class="adjustments" aria-label="Adjusted teams">
+            {#each edits as [number, value] (number)}<li>
+                <span title={event.teams[number]}
+                  ><strong>{number}</strong> · {value}%</span
+                >
+                <button
+                  type="button"
+                  class="text-button"
+                  aria-label={`Reset team ${number}`}
+                  disabled={running}
+                  onclick={() => setStrength(number, 100)}>Reset</button
+                >
+              </li>{/each}
+          </ul>{:else}<p class="field-note">
+            All teams use their published strength.
+          </p>{/if}
         <label for="iterations">Simulations</label>
-        <select id="iterations" bind:value={iterations} disabled={running}
+        <select
+          id="iterations"
+          bind:value={iterations}
+          disabled={running}
+          onchange={() => {
+            sharedLink = "";
+            shareMessage = "";
+          }}
           ><option value={1000}>1,000 · quick exploration</option><option
             value={5000}>5,000 · more precision</option
           ></select
@@ -320,6 +445,27 @@
             onclick={cancel}>Cancel simulation</button
           >{/if}
       </form>
+      <div class="share-scenario">
+        <button
+          class="share-button"
+          type="button"
+          disabled={running}
+          onclick={shareScenario}>Share these inputs</button
+        >
+        <p>
+          Links share adjustments and simulation count. Open a link to review
+          the inputs before running.
+        </p>
+        {#if sharedLink}<label class="sr-only" for="scenario-link"
+            >Scenario link</label
+          ><input
+            id="scenario-link"
+            readonly
+            value={sharedLink}
+            onclick={(e) => e.currentTarget.select()}
+          />{/if}
+        <p role="status">{shareMessage}</p>
+      </div>
       <p class="progress-message" role="status" aria-live="polite">
         {message}
       </p>
