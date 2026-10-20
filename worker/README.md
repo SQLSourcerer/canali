@@ -93,6 +93,10 @@ uv run python worker/replay_season.py 2025 --events USNJUCM1,USNJUCM2,USNJCMPPKW
 uv run python worker/import_event.py 2025 USNJCMPPKWY --parameters worker/fixtures/event.json --season-priors
 ```
 
+Use `--region USPA` instead of `--events` to select Pennsylvania's rated competitions. Region imports skip events
+with fewer than four teams or no published qualification schedule, reporting each skip. Unrated scrimmages and
+off-season events can still appear in the public catalog, without forecasts.
+
 The first command imports the selected events' metadata, teams and qualification schedules, then calls
 `POST /seasons/2025/step` until replay finishes. Repeating the command updates changed sources and resumes from the
 remaining cursor. An interrupted replay can also continue by calling `/step` directly, without fetching FIRST again.
@@ -186,7 +190,8 @@ schedule is published, the simulator generates one. For historical backtests, su
 initialization appropriate to the cutoff date; this option only truncates current-event match updates and progress.
 
 Omitting `--through` uses all currently scored qualifications. The native command checks FIRST's published alliances
-to identify the event stage. Once alliance selection is published, assembly requires an earlier qualification cutoff.
+to identify the event stage. Once alliance selection is published, assembly requires an explicit historical cutoff.
+Use `--after-qualifications` to retain all qualification results and reconstruct the event before selection.
 Published alliance selections, playoff progress and playoff EPA updates are not assembled in this slice. The prepared
 snapshot endpoint still accepts those inputs when supplied separately.
 
@@ -264,6 +269,7 @@ HTTP 409; clients can reread the status and retry. Only the latest run for an ev
 | `PUT /forecasts/{code}` | Validate and save a complete snapshot; identical documents preserve the revision |
 | `POST /forecasts/{code}/step` | Advance or resume one bounded Monte Carlo batch |
 | `GET /forecasts/{code}` | Read current progress or the completed event forecast, or 404 |
+| `PUT /forecasts/{code}/result` | Save a converged native result for the exact input revision, snapshot hash and engine |
 | `GET /forecasts/{code}/export` | Authenticated atomic read of a matching current snapshot, completed result and engine version |
 
 Recomputing starts from the input priors so scores are not applied twice. An input correction invalidates the old
@@ -277,6 +283,44 @@ Season replay keeps a bounded initialization prefix and one event in memory, rat
 The default configuration permits unauthenticated requests only on loopback hostnames. The separate benchmark
 environment requires a bearer token for every request, including reads and health checks. Local success does not
 establish that the engine fits the production 128 MB memory limit.
+
+## Compute locally and publish to hosted D1
+
+The native runner uses the same event simulator as the Worker. D1 retains the frozen inputs and completed forecast;
+the existing frontend publisher exports them without running another simulation. Deploy matching backend sources
+before uploading results. Hosted requests use the same benchmark and Cloudflare Access credentials as the publisher.
+
+For the 2025–26 DECODE season, prepare Pennsylvania component ratings in a running local Worker:
+
+```powershell
+uv run python worker/replay_season.py 2025 --region USPA --rule-pack warehouse/rule_packs/2025_decode.toml
+uv run python worker/assemble_forecast.py 2025 USPAHAQ1 --models worker/fixtures/forecast.json --context worker/fixtures/forecast-context.json --after-qualifications
+uv run python worker/local_forecast.py var/worker-forecast/2025-USPAHAQ1/snapshot.json --event 2025-USPAHAQ1 --base-url https://canali-benchmark.mjhanson.workers.dev
+```
+
+Repeat assembly and native computation for the other events. `--after-qualifications` requires a complete scored
+qualification schedule and reconstructs the event before alliance selection and playoffs. Played qualifications stay
+fixed; later alliances and playoff results are excluded. An explicit `--through N` also permits a historical snapshot
+at the end of qualifications; omitting a cutoff still rejects an event with published selection.
+
+The fixture's score/RP coefficients and empty award history are demo assumptions, and its null advancement slots
+produce no advancement estimates. Pennsylvania-only replay also omits teams' competition history outside the region
+and prior-season carryover unless supplied separately. State these limitations in the publication label.
+
+`local_forecast.py` saves counts, RNG state and the report beside the snapshot in `native-result.json`, replacing the
+checkpoint atomically after each batch. Repeating the command resumes matching inputs and engine, or retries an upload
+without recomputing a completed run. Changed inputs or engine start a fresh native checkpoint. An exhausted run is
+saved locally but never published as complete. The command clears the local `season_prior` dependency because revision
+numbers belong to their originating database; hosted inputs are frozen publications, refreshed by repeating the command.
+This uploads simulation inputs and results, rather than copying the local season corpus or rating-history tables.
+
+The authenticated result endpoint validates roster, rank distributions, probability bounds, iteration limits and
+convergence. Its atomic write rejects changed inputs or linked season revisions. Results carry the source fingerprint
+from the native runner; the backend does not rerun the simulation to prove the operator's numerical output.
+
+Finally, run `frontend/publish.py` against the hosted backend and build/deploy the frontend as described in
+the [frontend README](../frontend/README.md#publish-from-d1). That preserves the region catalog, real team names,
+immutable snapshots and browser scenario tools.
 
 ## Hosted benchmark
 

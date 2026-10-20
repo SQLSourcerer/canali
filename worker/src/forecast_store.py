@@ -1,11 +1,14 @@
 """D1 checkpoint publication guarded by input revision, engine version and step."""
 
+import hashlib
 import json
+import math
 
 from engine_version import ENGINE_VERSION
 from forecast import advance
+from pydantic import Field, PositiveInt
 from season import source_current
-from snapshot import EventSnapshot
+from snapshot import EventSnapshot, InputModel
 
 MAX_BODY = 512_000
 
@@ -37,6 +40,93 @@ SAVE_STATE = (
     + source_current("i")
     + ") RETURNING step"
 )
+
+SAVE_RESULT = (
+    "INSERT INTO forecast_state(event_code, input_revision, engine_version, status, result) "
+    "SELECT event_code, revision, ?, 'complete', ? FROM forecast_input i "
+    "WHERE event_code = ? AND revision = ? AND document = ? AND " + source_current("i") + " "
+    "ON CONFLICT(event_code) DO UPDATE SET input_revision = excluded.input_revision, "
+    "engine_version = excluded.engine_version, checkpoint = '{}', step = forecast_state.step + 1, "
+    "status = 'complete', result = excluded.result RETURNING input_revision"
+)
+
+
+class TeamResult(InputModel):
+    p_attend: float = Field(ge=0, le=1)
+    mean_rank: float = Field(ge=1)
+    rank_probabilities: list[float] = Field(min_length=1, max_length=128)
+    p_captain: float = Field(ge=0, le=1)
+    p_selected: float = Field(ge=0, le=1)
+    p_win: float = Field(ge=0, le=1)
+    p_advance: float | None = Field(ge=0, le=1)
+    p_advance_first_championship: float | None = Field(ge=0, le=1)
+
+
+class LocalResult(InputModel):
+    revision: PositiveInt
+    engine_version: str
+    snapshot_sha256: str
+    iterations: PositiveInt
+    standard_error: float = Field(ge=0, le=0.5)
+    teams: dict[PositiveInt, TeamResult]
+
+
+def snapshot_hash(snapshot: EventSnapshot) -> str:
+    return hashlib.sha256(snapshot.model_dump_json().encode()).hexdigest()
+
+
+async def upload_result(db, request, code: str) -> tuple[dict, int]:
+    """Accept native computations only for the exact current snapshot and engine."""
+    if request.method != "PUT":
+        return {"error": "method not allowed"}, 405
+    body = await request.text()
+    if len(body.encode()) > MAX_BODY:
+        return {"error": "input exceeds 512000 bytes"}, 413
+    result = LocalResult.model_validate_json(body)
+    row = await db.prepare("SELECT revision, document FROM forecast_input WHERE event_code = ?").bind(code).first()
+    if row is None:
+        return {"error": "event not found"}, 404
+    snapshot = EventSnapshot.model_validate_json(row.document)
+    if (
+        result.revision != row.revision
+        or result.engine_version != ENGINE_VERSION
+        or result.snapshot_sha256 != snapshot_hash(snapshot)
+    ):
+        return {"error": "input or engine changed; recompute the current snapshot"}, 409
+    if not snapshot.min_iterations <= result.iterations <= snapshot.max_iterations:
+        raise ValueError("iterations outside snapshot limits")
+    if result.standard_error > snapshot.tolerance:
+        raise ValueError("forecast has not converged")
+    if set(result.teams) != set(snapshot.field.predicted):
+        raise ValueError("result teams must match snapshot teams")
+    for team in result.teams.values():
+        ranks = team.rank_probabilities
+        if (
+            team.p_attend != 1
+            or len(ranks) > len(result.teams)
+            or any(not 0 <= p <= 1 for p in ranks)
+            or not math.isclose(sum(ranks), 1, abs_tol=1e-9)
+            or not math.isclose(sum(i * p for i, p in enumerate(ranks, 1)), team.mean_rank, abs_tol=1e-9)
+            or (team.p_advance is None) != (snapshot.slots is None)
+            or (team.p_advance_first_championship is None)
+            != (snapshot.slots is None or snapshot.slots.first_championship is None)
+        ):
+            raise ValueError("inconsistent team probabilities or ranks")
+    summary = result.model_dump(mode="json", include={"iterations", "standard_error", "teams"})
+    report = {
+        "status": "complete",
+        "iterations": result.iterations,
+        "standard_error": result.standard_error,
+        "result": summary,
+    }
+    saved = (
+        await db.prepare(SAVE_RESULT)
+        .bind(ENGINE_VERSION, json.dumps(report, allow_nan=False), code, result.revision, row.document)
+        .first()
+    )
+    if saved is None:
+        return {"error": "input or season changed; rebuild the forecast"}, 409
+    return {"event": code, "revision": result.revision, **report}, 200
 
 
 def stored_report(row) -> dict:

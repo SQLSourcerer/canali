@@ -59,6 +59,25 @@ def test_json_checkpoints_match_native_event_simulation(document):
     assert all(sum(team["rank_probabilities"]) == pytest.approx(1) for team in teams)
 
 
+@pytest.mark.parametrize("rating", [0.0, -1.0])
+def test_nonpositive_team_epa_matches_native_simulator(document, rating):
+    document["field"]["predicted"]["1"] = dict.fromkeys(document["field"]["predicted"]["1"], rating)
+    document.update(min_iterations=20, tolerance=0.3)
+    snapshot = EventSnapshot.model_validate(document)
+    native = run_event(
+        snapshot.draw(),
+        snapshot.rule_pack,
+        snapshot.models.build(),
+        np.random.default_rng(snapshot.seed),
+        slots=snapshot.slots,
+        progress=snapshot.progress.build(),
+        tolerance=snapshot.tolerance,
+        min_iterations=snapshot.min_iterations,
+    )
+    _, report = finish(snapshot)
+    assert json.loads(json.dumps(report["result"])) == json.loads(json.dumps(asdict(native)))
+
+
 def test_generated_schedule_matches_native_simulation(document):
     document.update(schedule=None, progress=None, min_iterations=12, tolerance=0.3)
     snapshot = EventSnapshot.model_validate(document)

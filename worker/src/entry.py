@@ -7,9 +7,11 @@ from urllib.parse import urlparse
 from access import allowed
 from assemble import handle as handle_assembly
 from compute import compute, validate
+from engine_version import ENGINE_VERSION
 from first_event import handle as handle_import
 from forecast_store import export as export_forecast
 from forecast_store import handle as handle_forecast
+from forecast_store import upload_result
 from season import handle as handle_season
 from season import source_current
 from workers import Response, WorkerEntrypoint
@@ -26,7 +28,14 @@ class Default(WorkerEntrypoint):
             import numpy
             import scipy
 
-            return Response.json({"status": "ok", "numpy": numpy.__version__, "scipy": scipy.__version__})
+            return Response.json(
+                {
+                    "status": "ok",
+                    "numpy": numpy.__version__,
+                    "scipy": scipy.__version__,
+                    "engine_version": ENGINE_VERSION,
+                }
+            )
         season_route = re.fullmatch(
             r"/seasons/([0-9]{4})(?:/(step)|/(events|priors|forecasts)/([A-Za-z0-9_-]{1,50}))?", path
         )
@@ -49,12 +58,14 @@ class Default(WorkerEntrypoint):
                 return Response.json(report, status=status)
             except (ValueError, KeyError, TypeError) as exc:
                 return Response.json({"error": str(exc)}, status=400)
-        forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step|/export)?", path)
+        forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step|/export|/result)?", path)
         if forecast_route is not None:
             code, step = forecast_route.groups()
             try:
                 report, status = (
-                    await export_forecast(self.env.DB, request, code)
+                    await upload_result(self.env.DB, request, code)
+                    if step == "/result"
+                    else await export_forecast(self.env.DB, request, code)
                     if step == "/export"
                     else await handle_forecast(self.env.DB, request, code, bool(step))
                 )

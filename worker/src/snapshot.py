@@ -143,8 +143,8 @@ class EventSnapshot(InputModel):
             raise ValueError("season dependency must match the rule pack")
         if not 4 <= len(teams) <= 128 or any(team <= 0 for team in teams):
             raise ValueError("field needs 4 to 128 positive team numbers")
-        if any(not values or sum(values.values()) <= 0 for values in self.field.predicted.values()):
-            raise ValueError("each team needs component ratings with a positive total")
+        if any(not values for values in self.field.predicted.values()):
+            raise ValueError("each team needs component ratings")
         if self.min_iterations > self.max_iterations:
             raise ValueError("min_iterations exceeds max_iterations")
         tier = tier_for(self.field.event_type)

@@ -30,9 +30,16 @@ def main():
     parser.add_argument(
         "--through", type=int, help="Use only this many scored qualification matches, in match-number order"
     )
+    parser.add_argument(
+        "--after-qualifications",
+        action="store_true",
+        help="Replay after all qualifications, ignoring later alliance selection and playoffs",
+    )
     parser.add_argument("--run", action="store_true", help="Resume Monte Carlo steps until convergence or exhaustion")
     parser.add_argument("--base-url", default="http://127.0.0.1:8787")
     args = parser.parse_args()
+    if args.after_qualifications and args.through is not None:
+        parser.error("--after-qualifications cannot be combined with --through")
     url = urlparse(args.base_url)
     if url.scheme != "http" or url.hostname not in ("127.0.0.1", "localhost", "::1") or url.path not in ("", "/"):
         parser.error("--base-url must be a local HTTP Worker URL")
@@ -52,6 +59,16 @@ def main():
         if alliances.status != 200:
             raise SystemExit(f"FIRST alliances HTTP {alliances.status}; stage could not be verified")
         body["selection_published"] = bool(alliances.data.get("alliances"))
+        if args.after_qualifications:
+            schedule = first.hybrid_schedule(args.season, args.event_code, "qual")
+            if schedule.status != 200:
+                raise SystemExit(f"FIRST schedule HTTP {schedule.status}")
+            matches = schedule.data["schedule"]
+            if not matches or any(
+                row.get("scoreRedFinal") is None or row.get("scoreBlueFinal") is None for row in matches
+            ):
+                raise SystemExit("a complete scored qualification schedule is required")
+            body["through"] = len(matches)
     key = f"{args.season}-{args.event_code}"
     archive = Path(__file__).resolve().parents[1] / "var" / "worker-forecast" / key
     with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=120) as worker:

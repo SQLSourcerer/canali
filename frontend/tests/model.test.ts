@@ -46,16 +46,16 @@ test("component improvements apply after team scaling, including zero-rated capa
     progress: { played: [true] },
   } as unknown as Snapshot;
   const result = scenarioSnapshot(source, { "1": 150 }, 1000, {
-    "1": { auto: 10, teleop: 5 },
+    "1": { auto: 1.25, teleop: 5.5 },
   });
-  assert.deepEqual(result.field.predicted["1"], { auto: 10, teleop: 125 });
+  assert.deepEqual(result.field.predicted["1"], { auto: 1.25, teleop: 125.5 });
   assert.deepEqual(result.field.predicted["2"], source.field.predicted["2"]);
   assert.deepEqual(result.progress, source.progress);
   assert.equal(source.field.predicted["1"].auto, 0);
   assert.throws(() =>
     scenarioSnapshot(source, {}, 1000, { "1": { invented: 5 } }),
   );
-  for (const points of [-1, 101, 1.5, NaN])
+  for (const points of [-1, 100.01, NaN, Infinity])
     assert.throws(() =>
       scenarioSnapshot(source, {}, 1000, { "1": { auto: points } }),
     );
@@ -85,7 +85,7 @@ test("shared links retain component improvements and valid playoff comparisons",
   } as unknown as PublishedEvent;
   const scenario = {
     strengths: {},
-    components: { "1": { auto: 10 } },
+    components: { "1": { auto: 1.25 } },
     iterations: 1000,
     comparison: {
       captain: "1",

@@ -54,7 +54,7 @@ def assemble(
     cutoff = scored if options.through is None else options.through
     if cutoff > scored:
         raise ValueError("through exceeds the number of scored qualification matches")
-    if options.selection_published and cutoff == scored:
+    if options.selection_published and cutoff == scored and options.through is None:
         raise ValueError("assembly supports qualification-stage snapshots; choose an earlier through cutoff")
     truncated = event.model_copy(deep=True)
     retained = set()

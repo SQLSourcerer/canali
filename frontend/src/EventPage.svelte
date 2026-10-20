@@ -535,7 +535,7 @@
                   type="number"
                   min="0"
                   max="100"
-                  step="1"
+                  step="any"
                   value={components[team]?.[name] ?? 0}
                   disabled={running || leaveRunning}
                   oninput={(e) =>

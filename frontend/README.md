@@ -39,8 +39,9 @@ For local D1, use a loopback `--base-url`, such as `http://127.0.0.1:8787`. The 
 local Worker, and local requests never receive hosted credentials. The Access pair can instead be stored in the
 ignored `worker/.dev.vars.access.json` file described in the [backend setup](../worker/README.md#cloudflare-access).
 The publisher does not ingest matches, rate events, assemble snapshots or start simulations; those
-steps must already have run through the existing Worker commands. The publication label is required so provisional
-model assumptions and historical cutoffs stay visible.
+inputs and completed results must already be in D1. Simulations can run in the Worker or through the
+[native runner](../worker/README.md#compute-locally-and-publish-to-hosted-d1), which uploads local results to D1.
+The publication label is required so provisional model assumptions and historical cutoffs stay visible.
 
 The export query joins each input to its matching revision and engine checkpoint in one D1 statement, with the same
 season-revision guards used by result reads. Running or exhausted runs expose status without a publishable snapshot.
@@ -109,7 +110,7 @@ unadjusted team ratings remain fixed. The caller chooses
 1,000 or 5,000 iterations. Fixed-size exploratory runs report the simulator's standard error rather than promising a
 particular convergence tolerance. The random seed stays fixed to support comparisons.
 
-"Improve individual components" adds 0–100 whole predicted points to selected scoring components after the team's
+"Improve individual components" adds 0–100 predicted points, including decimals, to selected scoring components after the team's
 overall percentage adjustment. It can improve a component whose published rating is zero. Component changes accumulate
 across teams and are included in resets, labels and shared links. They affect the existing score, RP and award models;
 the models are not refitted. Qualification tiebreaker components still use the score model's season-wide proportions.

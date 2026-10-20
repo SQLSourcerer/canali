@@ -174,6 +174,21 @@ def test_zero_cutoff_and_unknown_schedule(fixture):
     assert snap.schedule is None and snap.progress is None
 
 
+def test_explicit_end_of_qualifications_replays_before_selection(fixture):
+    pack = RulePack.model_validate(fixture["rule_pack"])
+    raw = source()
+    snapshot = assemble(
+        prepare(raw, "A", pack),
+        raw,
+        Config(rule_pack=pack),
+        init_scale(YEAR, []),
+        history={},
+        options=options(fixture, through=2),
+    )
+    assert snapshot.progress.played == [True, True]
+    assert snapshot.progress.alliances is None
+
+
 @pytest.mark.parametrize(
     "case", ["after-selection", "beyond-cutoff", "foreign-context", "no-components", "missing-bonus"]
 )

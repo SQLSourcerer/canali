@@ -193,11 +193,10 @@ function componentChanges(
       if (
         !Number.isFinite(points) ||
         points < 0 ||
-        points > 100 ||
-        !Number.isInteger(points)
+        points > 100
       )
         throw new Error(
-          "Add 0–100 predicted points per component, in whole points.",
+          "Add 0–100 predicted points per component.",
         );
       if (points !== 0) (normalized[team] ??= {})[component] = points;
     }

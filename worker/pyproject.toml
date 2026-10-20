@@ -23,6 +23,7 @@ target-version = "py313"
 "replay_season.py" = ["T201"]
 "assemble_forecast.py" = ["T201"]
 "benchmark.py" = ["T201"]
+"local_forecast.py" = ["T201"]
 "src/season.py" = ["PLR0911"]
 
 [tool.pytest.ini_options]
