@@ -14,11 +14,22 @@ export type Forecast = {
 export type Snapshot = {
   field: {
     predicted: Record<string, Record<string, number>>;
+    event_type?: string | null;
     [key: string]: unknown;
   };
-  rule_pack: { season: number; game: string };
+  rule_pack: {
+    season: number;
+    game: string;
+    structure?: {
+      alliance_brackets: {
+        min_teams: number;
+        max_teams: number;
+        alliances: number;
+      }[];
+    };
+  };
   schedule: { stations: number[][][] } | null;
-  progress: { played: boolean[] } | null;
+  progress: { played: boolean[]; decided?: unknown[] } | null;
   slots: unknown;
   seed: number;
   min_iterations: number;
@@ -100,8 +111,10 @@ export function scenarioSnapshot(
   source: Snapshot,
   strengths: Record<string, number>,
   iterations: number,
+  components: ComponentChanges = {},
 ): Snapshot {
   const adjustments = scenarioStrengths(source, strengths);
+  const additions = componentChanges(source, components);
   scenarioIterations(iterations);
   const copy = structuredClone(source);
   for (const [team, strength] of Object.entries(adjustments)) {
@@ -112,6 +125,13 @@ export function scenarioSnapshot(
       ]),
     );
   }
+  for (const [team, values] of Object.entries(additions)) {
+    for (const [component, points] of Object.entries(values).sort(([a], [b]) =>
+      a.localeCompare(b),
+    )) {
+      copy.field.predicted[team][component] += points;
+    }
+  }
   copy.min_iterations = iterations;
   copy.max_iterations = iterations;
   // Fixed-size exploratory runs still report their Monte Carlo standard error.
@@ -121,8 +141,121 @@ export function scenarioSnapshot(
 
 export type Scenario = {
   strengths: Record<string, number>;
+  components?: ComponentChanges;
+  comparison?: PartnerComparison;
   iterations: number;
 };
+
+export type ComponentChanges = Record<string, Record<string, number>>;
+export type PartnerComparison = {
+  captain: string;
+  partners: [string, string];
+  seed: number;
+};
+export type PartnerResults = {
+  iterations: number;
+  partners: {
+    partner: number;
+    p_win: number;
+    p_final: number;
+    mean_place: number;
+    standard_error: number;
+  }[];
+};
+
+export function componentLabel(name: string): string {
+  return name
+    .replace(/^auto_?/, "Autonomous ")
+    .replace(/^teleop_?/, "Teleop ")
+    .replaceAll("_", " ");
+}
+
+function componentChanges(
+  source: Snapshot,
+  changes: ComponentChanges,
+): ComponentChanges {
+  if (!changes || typeof changes !== "object" || Array.isArray(changes))
+    throw new Error(
+      "Component adjustments must be a set of team scoring changes.",
+    );
+  const normalized: ComponentChanges = {};
+  for (const [team, values] of Object.entries(changes)) {
+    if (
+      !Object.hasOwn(source.field.predicted, team) ||
+      !values ||
+      typeof values !== "object" ||
+      Array.isArray(values)
+    )
+      throw new Error("Choose component ratings for teams in this event.");
+    for (const [component, points] of Object.entries(values)) {
+      if (!Object.hasOwn(source.field.predicted[team], component))
+        throw new Error("Unknown scoring component.");
+      if (
+        !Number.isFinite(points) ||
+        points < 0 ||
+        points > 100 ||
+        !Number.isInteger(points)
+      )
+        throw new Error(
+          "Add 0–100 predicted points per component, in whole points.",
+        );
+      if (points !== 0) (normalized[team] ??= {})[component] = points;
+    }
+  }
+  return normalized;
+}
+
+export function allianceCount(snapshot: Snapshot): number {
+  const count = Object.keys(snapshot.field.predicted).length;
+  return (
+    snapshot.rule_pack.structure?.alliance_brackets.find(
+      (b) => b.min_teams <= count && count <= b.max_teams,
+    )?.alliances ?? 0
+  );
+}
+
+export function validateComparison(
+  snapshot: Snapshot,
+  comparison: PartnerComparison,
+): PartnerComparison {
+  if (snapshot.field.event_type === "FIRST Championship")
+    throw new Error(
+      "Partner comparisons currently support two-team playoff alliances.",
+    );
+  if (
+    !comparison ||
+    !Array.isArray(comparison.partners) ||
+    comparison.partners.length !== 2
+  )
+    throw new Error("Choose two possible partners.");
+  const teams = [comparison.captain, ...comparison.partners];
+  if (
+    new Set(teams).size !== 3 ||
+    teams.some(
+      (team) =>
+        typeof team !== "string" ||
+        !Object.hasOwn(snapshot.field.predicted, team),
+    )
+  )
+    throw new Error(
+      "Choose a captain and two different partners from this event.",
+    );
+  if (
+    !Number.isInteger(comparison.seed) ||
+    comparison.seed < 1 ||
+    comparison.seed > allianceCount(snapshot)
+  )
+    throw new Error("Choose an alliance seed in this event's bracket.");
+  if (snapshot.progress?.decided?.length)
+    throw new Error(
+      "Partner comparisons require a snapshot from before playoff matches were played.",
+    );
+  return {
+    captain: comparison.captain,
+    partners: [...comparison.partners],
+    seed: comparison.seed,
+  };
+}
 
 function scenarioIterations(iterations: number) {
   if (![1000, 5000].includes(iterations))
@@ -167,9 +300,21 @@ export function scenarioUrl(
       snapshot: event.source_snapshot_sha256,
       engine: event.engine_sha256,
       strengths: scenarioStrengths(event.snapshot, scenario.strengths),
+      ...(scenario.components
+        ? { components: componentChanges(event.snapshot, scenario.components) }
+        : {}),
+      ...(scenario.comparison
+        ? {
+            comparison: validateComparison(event.snapshot, scenario.comparison),
+          }
+        : {}),
       iterations: scenario.iterations,
     }),
   );
+  if (url.href.length > 16000)
+    throw new Error(
+      "This scenario is too large to share as a link. Reduce the number of adjustments.",
+    );
   return url.href;
 }
 
@@ -198,6 +343,12 @@ export function scenarioFromUrl(
     );
   return {
     strengths: scenarioStrengths(event.snapshot, shared.strengths),
+    ...(shared.components !== undefined
+      ? { components: componentChanges(event.snapshot, shared.components) }
+      : {}),
+    ...(shared.comparison !== undefined
+      ? { comparison: validateComparison(event.snapshot, shared.comparison) }
+      : {}),
     iterations: scenarioIterations(shared.iterations),
   };
 }

@@ -37,6 +37,11 @@ def build_engine(output=OUTPUT):
             member = TarInfo(name)
             member.size = len(data)
             bundle.addfile(member, io.BytesIO(data))
+        for name in ("partner_comparison.py", "auto_leave.py"):
+            data = (ROOT / name).read_bytes()
+            member = TarInfo(name)
+            member.size = len(data)
+            bundle.addfile(member, io.BytesIO(data))
     digest = hashlib.sha256(buffer.getvalue()).hexdigest()
     output.mkdir(parents=True, exist_ok=True)
     filename = f"engine-{digest}.tar"

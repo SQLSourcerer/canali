@@ -25,7 +25,11 @@ def test_publication_keeps_matching_revisions_rosters_and_content_addressed_asse
     with tarfile.open(fileobj=io.BytesIO(decoded)) as archive:
         for member in archive.getmembers():
             assert member.isfile() and not member.name.startswith("/") and ".." not in Path(member.name).parts
-            source = ROOT / "worker/src" / member.name
+            source = (
+                ROOT
+                / ("frontend" if member.name in ("partner_comparison.py", "auto_leave.py") else "worker/src")
+                / member.name
+            )
             assert archive.extractfile(member).read() == source.read_bytes()
     snap = EventSnapshot.model_validate_json((ROOT / "worker/fixtures/forecast.json").read_text())
     event = {

@@ -7,6 +7,7 @@ import {
   scenarioUrl,
   scenarioFromUrl,
   forecastChange,
+  validateComparison,
   type PublishedEvent,
   type Snapshot,
 } from "../src/model.ts";
@@ -39,6 +40,80 @@ test("what-if scales multiple chosen teams and preserves official results and so
   assert.deepEqual(scenarioSnapshot(source, {}, 1000).field, source.field);
 });
 
+test("component improvements apply after team scaling, including zero-rated capabilities", () => {
+  const source = {
+    field: { predicted: { "1": { auto: 0, teleop: 80 }, "2": { auto: 10 } } },
+    progress: { played: [true] },
+  } as unknown as Snapshot;
+  const result = scenarioSnapshot(source, { "1": 150 }, 1000, {
+    "1": { auto: 10, teleop: 5 },
+  });
+  assert.deepEqual(result.field.predicted["1"], { auto: 10, teleop: 125 });
+  assert.deepEqual(result.field.predicted["2"], source.field.predicted["2"]);
+  assert.deepEqual(result.progress, source.progress);
+  assert.equal(source.field.predicted["1"].auto, 0);
+  assert.throws(() =>
+    scenarioSnapshot(source, {}, 1000, { "1": { invented: 5 } }),
+  );
+  for (const points of [-1, 101, 1.5, NaN])
+    assert.throws(() =>
+      scenarioSnapshot(source, {}, 1000, { "1": { auto: points } }),
+    );
+});
+
+test("shared links retain component improvements and valid playoff comparisons", () => {
+  const event = {
+    source_snapshot_sha256: "snapshot",
+    engine_sha256: "engine",
+    snapshot: {
+      field: {
+        event_type: "Qualifier",
+        predicted: {
+          "1": { auto: 10 },
+          "2": { auto: 20 },
+          "3": { auto: 30 },
+          "4": { auto: 40 },
+        },
+      },
+      rule_pack: {
+        structure: {
+          alliance_brackets: [{ min_teams: 4, max_teams: 10, alliances: 2 }],
+        },
+      },
+      progress: null,
+    },
+  } as unknown as PublishedEvent;
+  const scenario = {
+    strengths: {},
+    components: { "1": { auto: 10 } },
+    iterations: 1000,
+    comparison: {
+      captain: "1",
+      partners: ["2", "3"] as [string, string],
+      seed: 2,
+    },
+  };
+  const url = new URL(
+    scenarioUrl("https://example.test/events/2025/A", event, scenario),
+  );
+  assert.deepEqual(scenarioFromUrl(url.search, event), scenario);
+  assert.throws(() =>
+    validateComparison(event.snapshot, {
+      ...scenario.comparison,
+      partners: ["1", "2"],
+    }),
+  );
+  assert.throws(() =>
+    validateComparison(event.snapshot, { ...scenario.comparison, seed: 3 }),
+  );
+  assert.throws(() =>
+    validateComparison(
+      { ...event.snapshot, progress: { played: [], decided: [{}] } },
+      scenario.comparison,
+    ),
+  );
+});
+
 test("scenario links round-trip inputs and reject malformed or mismatched publications", () => {
   const event = {
     source_snapshot_sha256: "snapshot1",
@@ -55,6 +130,14 @@ test("scenario links round-trip inputs and reject malformed or mismatched public
   );
   assert.equal(url.pathname, "/events/2025/A");
   assert.equal(url.hash, "");
+  assert.throws(
+    () =>
+      scenarioUrl(`https://example.test/?padding=${"x".repeat(16000)}`, event, {
+        strengths: {},
+        iterations: 1000,
+      }),
+    /too large/,
+  );
   assert.deepEqual(scenarioFromUrl(url.search, event), {
     strengths: { "1": 110 },
     iterations: 5000,

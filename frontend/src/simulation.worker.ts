@@ -47,9 +47,24 @@ self.onmessage = async ({ data }) => {
     runtime.runPython(
       "snapshot = EventSnapshot.model_validate_json(snapshot_json)\ncheckpoint = None",
     );
+    if (data.leave) {
+      runtime.globals.set("leave_json", JSON.stringify(data.leave));
+      runtime.runPython(
+        "from auto_leave import LeaveComparison, advance_leave\nleave = LeaveComparison.model_validate_json(leave_json)",
+      );
+    } else if (data.comparison) {
+      runtime.globals.set("comparison_json", JSON.stringify(data.comparison));
+      runtime.runPython(
+        "from partner_comparison import PartnerComparison, advance_partners\ncomparison = PartnerComparison.model_validate_json(comparison_json)",
+      );
+    }
     while (true) {
       const raw = runtime.runPython(
-        "checkpoint, report = advance(snapshot, checkpoint)\njson.dumps(report)",
+        data.leave
+          ? "checkpoint, report = advance_leave(snapshot, leave, checkpoint)\njson.dumps(report)"
+          : data.comparison
+            ? "checkpoint, report = advance_partners(snapshot, comparison, checkpoint)\njson.dumps(report)"
+            : "checkpoint, report = advance(snapshot, checkpoint)\njson.dumps(report)",
       );
       const report = JSON.parse(raw);
       self.postMessage({ kind: "progress", ...report });

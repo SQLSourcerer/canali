@@ -104,6 +104,11 @@ unadjusted team ratings remain fixed. The caller chooses
 1,000 or 5,000 iterations. Fixed-size exploratory runs report the simulator's standard error rather than promising a
 particular convergence tolerance. The random seed stays fixed to support comparisons.
 
+"Improve individual components" adds 0–100 whole predicted points to selected scoring components after the team's
+overall percentage adjustment. It can improve a component whose published rating is zero. Component changes accumulate
+across teams and are included in resets, labels and shared links. They affect the existing score, RP and award models;
+the models are not refitted. Qualification tiebreaker components still use the score model's season-wide proportions.
+
 The custom table shows changes in average rank, captain probability and event-win probability relative to the shared
 forecast. Lower ranks are better; probability changes use percentage points. Editing inputs leaves the last completed
 result visible with a notice until another run completes, and its label retains the adjustments used for that run.
@@ -114,6 +119,31 @@ the inputs for review without downloading Python or starting a run. A link for a
 with an explanation; forecasts remain available for browsing. Links share inputs, not computed results, and may stop
 working after a publication changes. Scenario links are public and contain no credentials.
 
+## Playoff partner comparisons
+
+Choose a captain, two possible partners and an assumed alliance seed. Each trial simulates the remaining qualification
+matches with the event model, keeping played results fixed. For each candidate it reserves the proposed pair, forms
+the other alliances from the remaining teams in simulated qualification order using the pick model, inserts the pair
+at the chosen seed, then plays the event's full playoff bracket using its score and foul models. The alternative partner
+can therefore join an opposing alliance. Published alliance selection is replaced for this hypothetical comparison.
+
+The results estimate winning the playoff, reaching the final and average playoff finish, conditional on that pair
+and seed. They do not estimate whether a team becomes a captain, whether the partner is available at its pick, or
+advancement and awards. Playoff scores add team ratings; robot-role compatibility and scoring synergy are not modeled.
+Opposing alliances can change with the proposed partner. The display retains the exact inputs
+used for the last completed run and marks results when the draft changes. The iteration count and all component and
+team adjustments apply to both alternatives. "Share this comparison" includes these inputs and the pairing setup.
+
+Comparisons support two-team playoff alliances and snapshots from before any playoff matches were played. Refusing
+later snapshots avoids discarding actual playoff results. Both alternatives reuse the same qualification trial and
+start their selection/playoff draws with the same per-trial random seed. Each probability reports its Monte Carlo
+standard error; small differences can still be noise.
+
+`partner_comparison.py` is included in the immutable browser TAR and runs through the same lazy-loaded Web Worker as
+event forecasts. Its counters and RNG state advance in bounded batches. There is no additional server compute or
+backend route. It currently obtains qualification trials through the complete event simulator, which also performs
+an unused baseline playoff; a shared qualification helper would reduce work if larger comparisons become slow.
+
 The Python Worker and browser use the same `snapshot.py`, `forecast.advance` and simulator sources. Python is loaded
 only after the visitor requests a custom simulation. Progress arrives after each bounded batch. Cancel terminates the
 Web Worker, including an in-progress Python call; a later run reloads the runtime. Completed scenarios stay in page
@@ -123,6 +153,35 @@ required. Network access is needed for the first runtime download.
 
 The table supplies the first useful view without a chart dependency. Use TanStack Charts if a later slice adds
 rank distributions or rating histories.
+
+## Autonomous LEAVE comparisons
+
+For DECODE events with a published schedule, the autonomous LEAVE panel compares an entered current success rate
+with an improved rate for one team. Both rates are assumptions supplied by the visitor; current reliability is not
+inferred from EPA. This panel uses published team strengths independently of the generic component adjustments.
+It reports expected added points per remaining appearance, paired average qualification ranks and their difference's
+Monte Carlo standard error. Remaining matches are sorted by Movement RP probability gain and show alliance points,
+Movement RP probability and total RP, including win/tie points. Surrogate appearances are marked and excluded from
+the team's ranking score. Played results remain fixed; a team with no remaining matches is rejected.
+
+`auto_leave.py` samples robot LEAVE outcomes explicitly (3 points each). Other robots' probabilities are their
+leave component EPA divided by 3, clipped to 0–1. It estimates alliance BASE outcomes by interpolating between
+adjacent legal totals, 0/5/10/15/30, with the mean equal to the summed base EPA clipped to 0–30. This is a simple
+assumed distribution, not a fit to observed robot states. BASE and LEAVE draws are independent. The Movement RP
+is awarded by comparing sampled BASE plus LEAVE points with the event tier's rule-pack threshold.
+See [DECODE manual section 10.5.4](https://ftc-resources.firstinspires.org/ftc/archive/2026/game/cm-html/DECODE_Competition_Manual_TU32.htm).
+
+Other points use the existing score distribution with leave and base components removed, then the sampled action
+points are added back. AUTO tiebreaker points use the remaining autonomous share plus sampled LEAVE points;
+BASE is accounted for separately. Other bonus RPs retain their existing models. Every trial shares all other
+outcomes, including random ranking tiebreakers, between the two alternatives. Identical rates give identical
+results. These comparisons use a different action model from the shared forecast, so their current-rate baseline
+can differ from it. They estimate qualification impact only; playoff and alliance-selection probabilities are not
+part of this comparison. Model assumptions can matter more than the displayed sampling error.
+
+The helper is packaged in the browser TAR and runs in bounded batches through Pyodide. The page permits one
+simulation at a time and releases the comparison's runtime on completion or cancellation. This first version has
+no shareable LEAVE-scenario links and supports only DECODE.
 
 ## Checks
 
@@ -135,13 +194,15 @@ npm run build
 From the repository root, Python publication and D1 export tests can be run with:
 
 ```powershell
-uv run pytest -c worker/pyproject.toml worker/tests frontend/tests/test_publication.py --basetemp var/frontend/test-tmp
+uv run pytest -c worker/pyproject.toml worker/tests frontend/tests --basetemp var/frontend/test-tmp
 ```
 
-Model tests check multi-team isolation, bounds, URL round trips, snapshot and engine matching, comparison labels,
+Model tests check multi-team/component isolation, bounds, URL round trips, snapshot and engine matching, comparison labels,
 stable ranking and missing values. Browser verification should include an unchanged 100% scenario, multiple changed
 teams, individual and whole-scenario resets, sharing and reopening inputs, stale links, cancellation, another run
-after cancellation, and a narrow viewport.
+after cancellation, and a narrow viewport. Partner tests check reserved teams and seeds, unique alliance membership,
+checkpoint continuation, candidate-order invariance and invalid requests. Browser verification also covers component
+and partner link round trips and comparison results against the native helper.
 After packaging changes, also compare browser results with the native result for an identical snapshot and seed.
 Route tests distinguish season, event and unknown URLs. Publication tests check deterministic engine bundles,
 matching revisions and rosters, missing forecasts and preservation of the existing catalog on failure. D1 export
