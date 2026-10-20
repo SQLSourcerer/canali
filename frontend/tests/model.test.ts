@@ -8,9 +8,26 @@ import {
   scenarioFromUrl,
   forecastChange,
   validateComparison,
+  hasRemainingQualifications,
   type PublishedEvent,
   type Snapshot,
 } from "../src/model.ts";
+
+test("LEAVE eligibility uses the selected team's unplayed appearances", () => {
+  const snapshot = {
+    schedule: { stations: [[[1, 2], [3, 4]], [[3, 5], [4, 6]]] },
+    progress: { played: [true, false] },
+  } as unknown as Snapshot;
+  assert.equal(hasRemainingQualifications(snapshot, "1"), false);
+  assert.equal(hasRemainingQualifications(snapshot, "3"), true);
+  assert.equal(hasRemainingQualifications(snapshot, "6"), true);
+  assert.equal(hasRemainingQualifications(snapshot, "99"), false);
+  assert.equal(hasRemainingQualifications({ ...snapshot, progress: null }, "1"), true);
+  assert.equal(hasRemainingQualifications({ ...snapshot, schedule: null }, "1"), false);
+  assert.equal(hasRemainingQualifications({
+    ...snapshot, progress: { played: [true, true] },
+  }, "3"), false);
+});
 
 test("what-if scales multiple chosen teams and preserves official results and source inputs", () => {
   const source = {

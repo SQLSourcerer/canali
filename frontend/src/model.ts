@@ -75,6 +75,14 @@ export type PublishedEvent = Omit<
   forecast: Forecast;
 };
 
+export function hasRemainingQualifications(snapshot: Snapshot, team: string): boolean {
+  return snapshot.schedule?.stations.some(
+    (alliances, match) =>
+      !snapshot.progress?.played[match] &&
+      alliances.some((stations) => stations.includes(Number(team))),
+  ) ?? false;
+}
+
 export function formatDate(value: string | null): string {
   return value
     ? new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {

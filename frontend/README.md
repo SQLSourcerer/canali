@@ -168,7 +168,8 @@ inferred from EPA. This panel uses published team strengths independently of the
 It reports expected added points per remaining appearance, paired average qualification ranks and their difference's
 Monte Carlo standard error. Remaining matches are sorted by Movement RP probability gain and show alliance points,
 Movement RP probability and total RP, including win/tie points. Surrogate appearances are marked and excluded from
-the team's ranking score. Played results remain fixed; a team with no remaining matches is rejected.
+the team's ranking score. Played results remain fixed. For a team with no remaining qualification matches,
+the page disables the comparison and explains why before downloading the simulation runtime.
 
 `auto_leave.py` samples robot LEAVE outcomes explicitly (3 points each). Other robots' probabilities are their
 leave component EPA divided by 3, clipped to 0–1. It estimates alliance BASE outcomes by interpolating between

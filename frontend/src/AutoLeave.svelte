@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { percent, type PublishedEvent } from "./model";
+  import { hasRemainingQualifications, percent, type PublishedEvent } from "./model";
 
   let {
     event,
@@ -12,6 +12,7 @@
     onbusy: (busy: boolean) => void;
   } = $props();
   let team = $state("");
+  const hasRemaining = $derived(hasRemainingQualifications(event.snapshot, team));
   onMount(() => {
     team = Object.keys(event.teams)[0];
   });
@@ -52,7 +53,7 @@
   }
 
   function run() {
-    if (disabled || running) return;
+    if (disabled || running || !hasRemaining) return;
     error = "";
     if (
       ![current, improved].every(
@@ -182,10 +183,17 @@
           ></select
         >
       </div>
-      <button class="run-button" type="submit" disabled={disabled || running}
+      <button class="run-button" type="submit" disabled={disabled || running || !hasRemaining}
         >Compare LEAVE improvement<span aria-hidden="true">↗</span></button
       >
     </form>
+    {#if team && !hasRemaining}
+      <p role="status" class="field-note">
+        Team {team} has no remaining qualification matches in this snapshot.
+        This comparison only simulates remaining qualification matches;
+        playoff LEAVE comparisons are not supported yet.
+      </p>
+    {/if}
     <p class="field-note">
       Model assumption: other robots' LEAVE rates use their leave EPA divided by
       3, clipped to 0–100%. Alliance BASE points are drawn between the two
