@@ -3,14 +3,13 @@
 import argparse
 import hashlib
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
+from remote_access import request_headers
 
 
 def benchmark(client, snapshot, event, max_steps, report):
@@ -56,11 +55,10 @@ def main():
     parser.add_argument("--max-steps", type=int, default=64)
     parser.add_argument("--output", type=Path, default=Path("../var/worker-benchmark/report.json"))
     args = parser.parse_args()
-    url = urlparse(args.base_url)
-    local = url.scheme == "http" and url.hostname in ("127.0.0.1", "localhost", "::1")
-    remote = url.scheme == "https" and (url.hostname or "").endswith(".workers.dev")
-    if not (local or remote) or url.path not in ("", "/") or url.username or url.password or url.query or url.fragment:
-        parser.error("use a loopback HTTP URL or HTTPS workers.dev URL, without credentials, path or query")
+    try:
+        headers = request_headers(args.base_url)
+    except ValueError as exc:
+        parser.error(str(exc))
     if not 1 <= args.max_steps <= 1000:
         parser.error("--max-steps must be between 1 and 1000")
     if (
@@ -69,9 +67,6 @@ def main():
         or not args.event.replace("-", "").replace("_", "").isalnum()
     ):
         parser.error("--event must use 1 to 64 ASCII letters, digits, underscores or hyphens")
-    token = os.environ.get("CANALI_BENCHMARK_TOKEN", "")
-    if remote and len(token) < 32:
-        parser.error("set CANALI_BENCHMARK_TOKEN to the deployed secret (at least 32 characters)")
     snapshot = json.loads(args.snapshot.read_text(encoding="utf-8"))
     # Frozen benchmark inputs do not depend on the local database's season revisions.
     snapshot["season_prior"] = None
@@ -83,7 +78,6 @@ def main():
         "requests": [],
         "progress": [],
     }
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         with httpx.Client(
             base_url=args.base_url.rstrip("/"), headers=headers, timeout=120, follow_redirects=False

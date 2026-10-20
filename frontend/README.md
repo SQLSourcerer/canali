@@ -25,15 +25,20 @@ The root Python environment needs the existing project dependencies. Use Node.js
 
 The native publisher fetches public competition metadata from FIRST and reads forecasts through the private Worker's
 authenticated `/forecasts/{season}-{code}/export` route. FIRST credentials remain in the existing warehouse settings.
-Set the benchmark token in the command terminal, using the same value as the Worker's secret:
+Set the benchmark token in the command terminal, using the same value as the Worker's secret. Hosted export also
+requires a Cloudflare Access service token authorized for the backend:
 
 ```powershell
 $env:CANALI_BENCHMARK_TOKEN = Read-Host 'Benchmark token' -MaskInput
+$env:CANALI_ACCESS_CLIENT_ID = Read-Host 'Access client ID'
+$env:CANALI_ACCESS_CLIENT_SECRET = Read-Host 'Access client secret' -MaskInput
 uv run python frontend/publish.py 2025 --region USPA --base-url https://canali-benchmark.mjhanson.workers.dev --label "Historical replay · demo models, uniform priors, no advancement assumptions"
 ```
 
 For local D1, use a loopback `--base-url`, such as `http://127.0.0.1:8787`. The token is unnecessary with the default
-local Worker. The publisher does not ingest matches, rate events, assemble snapshots or start simulations; those
+local Worker, and local requests never receive hosted credentials. The Access pair can instead be stored in the
+ignored `worker/.dev.vars.access.json` file described in the [backend setup](../worker/README.md#cloudflare-access).
+The publisher does not ingest matches, rate events, assemble snapshots or start simulations; those
 steps must already have run through the existing Worker commands. The publication label is required so provisional
 model assumptions and historical cutoffs stay visible.
 

@@ -280,7 +280,8 @@ establish that the engine fits the production 128 MB memory limit.
 
 ## Hosted benchmark
 
-The project's deployed benchmark is `https://canali-benchmark.mjhanson.workers.dev`; it requires the benchmark token.
+The project's deployed benchmark is `https://canali-benchmark.mjhanson.workers.dev`; it requires both a Cloudflare
+Access service token and the benchmark bearer token.
 
 The `benchmark` environment is an opt-in deployment with its own D1 database, a required `BENCHMARK_TOKEN` secret,
 and invocation logs. It uses a workers.dev address, with preview URLs disabled. It is configured for Workers Paid,
@@ -304,6 +305,7 @@ uv run pywrangler d1 create canali-benchmark
 ```
 
 For that new account, replace `database_id` under `env.benchmark.d1_databases` in `wrangler.toml` with the returned UUID.
+Update `BACKEND_HOST` in `remote_access.py` to that account's backend hostname before using the hosted clients.
 Leave the local binding unchanged. Apply migrations to the benchmark database and configure a random secret of at
 least 32 characters, kept in your password manager. PowerShell's masked prompt avoids putting it in command history:
 
@@ -320,10 +322,56 @@ If a benchmark token is already configured, reuse it rather than replacing it. T
 is ignored by Git and can hold the same token for local testing. Keep a copy in your password manager; Cloudflare
 does not return the saved secret's value.
 
+### Cloudflare Access
+
+Protect only `canali-benchmark` with a Worker-level Access application for **all traffic**. This covers its production
+and preview addresses, routes and future custom domains. Keep `canali-frontend` public; shared results and browser
+simulations do not need backend access. Access is configured separately from Wrangler deployments and requires an
+initial Zero Trust Free organization in the Cloudflare account.
+
+The project's active policy is **Canali native tools only**, with Service Auth restricted to the **Canali native tools**
+token. The token expires October 20, 2027. Its current credentials are stored locally in the ignored file below;
+copy them to your password manager or CI secret store when needed, without adding them to Git.
+
+Create a service token for native Canali tools and a **Service Auth** policy that includes only that token. Do not
+use an Everyone or Bypass policy. Retain the Worker's existing benchmark bearer token as a second check. Access
+rejects unauthenticated requests before they invoke Python; rejecting a request only inside Python still meters the
+invocation. The per-invocation CPU limit remains useful for authorized work and is not a monthly spending cap.
+
+Both `benchmark.py` and `frontend/publish.py` send `CF-Access-Client-Id` and `CF-Access-Client-Secret`, as well as
+`Authorization: Bearer ...`, to the project's exact HTTPS backend hostname. Redirects are disabled. For hosted
+commands, set the existing `CANALI_BENCHMARK_TOKEN` and the two service-token environment variables:
+
+```powershell
+$env:CANALI_ACCESS_CLIENT_ID = Read-Host 'Access client ID'
+$env:CANALI_ACCESS_CLIENT_SECRET = Read-Host 'Access client secret' -MaskInput
+```
+
+Alternatively, save the Access pair as JSON in `worker/.dev.vars.access.json`, which Git ignores:
+
+```json
+{
+  "CANALI_ACCESS_CLIENT_ID": "your-client-id.access",
+  "CANALI_ACCESS_CLIENT_SECRET": "your-client-secret"
+}
+```
+
+Both environment variables must be set together to override the file. The benchmark bearer token still comes from
+`CANALI_BENCHMARK_TOKEN`. Keep all credentials out of generated assets and Vite variables. Service tokens expire;
+renew or replace the stored pair before expiry and update the application's Service Auth policy if its token ID changes.
+Local loopback commands do not read this file or send credentials. The import, replay and assembly CLIs remain local-only.
+
+Verify protection with anonymous requests (including `/health` and POST routes), a request with only the benchmark
+bearer token, one with only the Access pair, and one with both. Only the last should reach the protected backend
+successfully. Check that the public frontend still loads. Missing or invalid Access credentials must be rejected by
+Access, while a valid Access pair with no benchmark token must receive the Worker's own JSON `access denied` response.
+
+### Run a hosted benchmark
+
 Use the real snapshot produced by the local assembly command, or `fixtures/forecast.json` for a synthetic trial:
 
 ```powershell
-uv run python benchmark.py ../var/worker-forecast/2025-USNJCMPPKWY/snapshot.json --base-url https://canali-benchmark.YOUR-SUBDOMAIN.workers.dev
+uv run python benchmark.py ../var/worker-forecast/2025-USNJCMPPKWY/snapshot.json --base-url https://canali-benchmark.mjhanson.workers.dev
 ```
 
 The benchmark uploads a frozen snapshot without its local D1 season-revision dependency. It runs sequential batches,

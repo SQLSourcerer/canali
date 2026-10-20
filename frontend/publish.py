@@ -1,12 +1,15 @@
 """Export a region's FIRST catalog and matching D1 forecasts into static assets."""
 
 import argparse
-import os
+import sys
 from datetime import UTC, datetime
-from urllib.parse import urlparse
+from pathlib import Path
 
 import httpx
 from prepare import OUTPUT, build_engine, publish_event, write_json
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "worker"))
+from remote_access import request_headers
 
 EVENT_TYPES = {"0": "Scrimmage", "2": "Qualifier", "4": "Championship", "10": "Off-season"}
 
@@ -91,18 +94,13 @@ def main():
     parser.add_argument("--base-url", default="http://127.0.0.1:8787")
     parser.add_argument("--label", required=True, help="Data quality, model and historical replay assumptions")
     args = parser.parse_args()
-    url = urlparse(args.base_url)
-    local = url.scheme == "http" and url.hostname in ("127.0.0.1", "localhost", "::1")
-    remote = url.scheme == "https" and url.hostname == "canali-benchmark.mjhanson.workers.dev"
-    if not (local or remote) or url.path not in ("", "/") or url.username or url.password or url.query or url.fragment:
-        parser.error("use a loopback URL or the project's HTTPS benchmark Worker")
+    try:
+        headers = request_headers(args.base_url)
+    except ValueError as exc:
+        parser.error(str(exc))
     if not 2015 <= args.season <= 2100 or not args.region.isascii() or not args.region.isalnum():
         parser.error("invalid season or region")
-    token = os.environ.get("CANALI_BENCHMARK_TOKEN", "")
-    if remote and len(token) < 32:
-        parser.error("set CANALI_BENCHMARK_TOKEN for authenticated remote export")
     engine = build_engine()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
     with (
         FtcEventsClient() as first,
         httpx.Client(
