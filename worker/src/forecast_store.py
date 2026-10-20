@@ -24,6 +24,12 @@ READ_STATE = (
     "ON i.event_code = s.event_code AND i.revision = s.input_revision "
     "WHERE s.event_code = ? AND s.engine_version = ? AND " + source_current("i")
 )
+EXPORT = (
+    "SELECT i.document AS snapshot, s.input_revision, s.engine_version, s.status, s.result "
+    "FROM forecast_state s JOIN forecast_input i "
+    "ON i.event_code = s.event_code AND i.revision = s.input_revision "
+    "WHERE s.event_code = ? AND s.engine_version = ? AND " + source_current("i")
+)
 SAVE_STATE = (
     "UPDATE forecast_state SET checkpoint = ?, status = ?, result = ?, step = step + 1 "
     "WHERE event_code = ? AND input_revision = ? AND engine_version = ? AND step = ? "
@@ -36,6 +42,24 @@ SAVE_STATE = (
 def stored_report(row) -> dict:
     report = json.loads(row.result) if row.result else {"status": "running", "iterations": 0, "result": None}
     return {"event": row.event_code, "revision": row.input_revision, "step": row.step, **report}
+
+
+async def export(db, request, code: str) -> tuple[dict, int]:
+    """Read the matching input and forecast atomically; never export obsolete computations."""
+    if request.method != "GET":
+        return {"error": "method not allowed"}, 405
+    row = await db.prepare(EXPORT).bind(code, ENGINE_VERSION).first()
+    if row is None:
+        return {"error": "no current forecast"}, 404
+    report = json.loads(row.result) if row.result else {}
+    return {
+        "event": code,
+        "revision": row.input_revision,
+        "engine_version": row.engine_version,
+        "status": row.status,
+        "snapshot": json.loads(row.snapshot) if row.status == "complete" else None,
+        "forecast": report.get("result") if row.status == "complete" else None,
+    }, 200
 
 
 async def handle(db, request, code: str, run: bool) -> tuple[dict, int]:

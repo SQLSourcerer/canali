@@ -26,15 +26,74 @@ export type Snapshot = {
   tolerance: number;
   [key: string]: unknown;
 };
-export type PublishedEvent = {
+export type EventListing = {
+  code: string;
+  season: number;
   name: string;
   label: string;
+  date_start: string | null;
+  date_end: string | null;
+  city: string;
+  venue: string;
+  type: string;
+  source_url: string | null;
+  published_at?: string;
+  status: "complete" | "running" | "exhausted" | "unpublished";
+  forecast_url: string | null;
+  played?: number;
+  scheduled?: number | null;
+};
+export type Catalog = {
+  season: number;
+  region: string;
+  region_name: string;
   published_at: string;
+  events: EventListing[];
+};
+export type PublishedEvent = Omit<
+  EventListing,
+  "status" | "forecast_url" | "published_at"
+> & {
+  published_at: string;
+  teams: Record<string, string>;
+  source_revision: number | null;
   engine_url: string;
   engine_sha256: string;
   snapshot: Snapshot;
   forecast: Forecast;
 };
+
+export function formatDate(value: string | null): string {
+  return value
+    ? new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "Date not set";
+}
+
+export function statusLabel(status: EventListing["status"]): string {
+  return {
+    complete: "Forecast available",
+    running: "Computing forecast",
+    exhausted: "More simulations needed",
+    unpublished: "Not published",
+  }[status];
+}
+
+export function routeFor(
+  path: string,
+  catalog: Catalog,
+): EventListing | "season" | null {
+  const clean = path.replace(/\/$/, "") || "/";
+  if (clean === "/" || clean === `/seasons/${catalog.season}/${catalog.region}`)
+    return "season";
+  return (
+    catalog.events.find((e) => clean === `/events/${e.season}/${e.code}`) ??
+    null
+  );
+}
 
 export function scenarioSnapshot(
   source: Snapshot,

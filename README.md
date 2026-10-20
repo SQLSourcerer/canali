@@ -11,7 +11,7 @@ An FTC robotics statistics stack: raw data collected from external APIs; all der
 | [`live/`](live/README.md) | The automated polling of a live event/season |
 | [`analysis/`](analysis/README.md) | Head-to-head comparison of pRidge, EPA, and OPR on the same alliances |
 | [`worker/`](worker/README.md) | Local Python Workers + D1: FIRST imports, resumable season EPA, match forecasts and event simulations |
-| [`frontend/`](frontend/README.md) | Vite + Svelte event forecasts and custom simulations using Python WebAssembly on the visitor's device |
+| [`frontend/`](frontend/README.md) | Vite + Svelte season browser, published D1 forecasts and custom Python WebAssembly simulations on the visitor's device |
 
 The models read the warehouse and write ratings back to it. `analysis` reads matches and EPA ratings from the warehouse and refits pRidge and OPR itself.
 

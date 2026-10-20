@@ -27,7 +27,8 @@ async function initialize(engineUrl: string, expectedHash: string) {
     throw new Error(
       "The simulation engine changed. Reload the page and try again.",
     );
-  py.unpackArchive(archive, "zip", { extractDir: "/canali" });
+  // Fetch decodes HTTP Brotli; the hash and Pyodide both receive the plain TAR.
+  py.unpackArchive(archive, "tar", { extractDir: "/canali" });
   py.runPython(`import sys, json
 sys.path.insert(0, '/canali')
 from snapshot import EventSnapshot

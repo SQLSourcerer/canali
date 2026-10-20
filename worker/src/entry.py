@@ -8,6 +8,7 @@ from access import allowed
 from assemble import handle as handle_assembly
 from compute import compute, validate
 from first_event import handle as handle_import
+from forecast_store import export as export_forecast
 from forecast_store import handle as handle_forecast
 from season import handle as handle_season
 from season import source_current
@@ -48,11 +49,15 @@ class Default(WorkerEntrypoint):
                 return Response.json(report, status=status)
             except (ValueError, KeyError, TypeError) as exc:
                 return Response.json({"error": str(exc)}, status=400)
-        forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step)?", path)
+        forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step|/export)?", path)
         if forecast_route is not None:
             code, step = forecast_route.groups()
             try:
-                report, status = await handle_forecast(self.env.DB, request, code, bool(step))
+                report, status = (
+                    await export_forecast(self.env.DB, request, code)
+                    if step == "/export"
+                    else await handle_forecast(self.env.DB, request, code, bool(step))
+                )
                 return Response.json(report, status=status)
             except (ValueError, KeyError, TypeError, NotImplementedError) as exc:
                 return Response.json({"error": str(exc)}, status=400)

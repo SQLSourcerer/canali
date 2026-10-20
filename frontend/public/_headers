@@ -1,0 +1,10 @@
+/generated/catalog.json
+  Cache-Control: no-cache
+/generated/event-*.json
+  Cache-Control: public, max-age=31536000, immutable
+/generated/engine-*.zip
+  Cache-Control: public, max-age=31536000, immutable
+/generated/engine-*.tar
+  Content-Type: application/x-tar
+  Content-Encoding: br
+  Cache-Control: public, max-age=31536000, immutable

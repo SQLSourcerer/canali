@@ -712,3 +712,173 @@ footer > span:last-child {
       color 0.15s;
   }
 }
+
+.brand {
+  text-decoration: none;
+}
+.breadcrumb {
+  padding-top: 24px;
+  color: #6b7467;
+  font-size: 11px;
+}
+.breadcrumb + .event-heading {
+  padding-top: 22px;
+}
+.team-name {
+  display: block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #66705e;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.season-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: end;
+  margin-bottom: 22px;
+}
+.season-toolbar h2 {
+  margin-top: 6px;
+}
+.season-filters {
+  display: flex;
+  gap: 10px;
+}
+.season-filters input {
+  border: 1px solid #cbd2bd;
+  background: #fcfbf7;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 2px;
+  width: 220px;
+  font-size: 12px;
+}
+.season-filters select {
+  width: 150px;
+}
+.event-list {
+  border: 1px solid #dcded3;
+  background: #fcfbf7;
+}
+.event-card {
+  display: grid;
+  grid-template-columns: 145px minmax(0, 1fr) 155px 16px;
+  gap: 20px;
+  padding: 23px 25px;
+  align-items: center;
+  border-bottom: 1px solid #e1e3d9;
+  text-decoration: none;
+}
+.event-card:last-child {
+  border-bottom: none;
+}
+.event-card:hover {
+  background: #edf1e4;
+}
+.event-date {
+  font-size: 13px;
+  color: #53614a;
+  font-weight: 500;
+}
+.event-date span {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  margin-top: 5px;
+}
+.event-card h3 {
+  font:
+    500 20px "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.035em;
+  margin: 4px 0;
+}
+.event-card p {
+  font-size: 11px;
+  color: #6c7767;
+}
+.event-card .forecast-cutoff {
+  margin-top: 7px;
+  color: #4b6340;
+  line-height: 1.7;
+}
+.status-pill {
+  display: inline-block;
+  font-size: 10px;
+  color: #747b70;
+  background: #f0f1e9;
+  padding: 5px 9px;
+  border: 1px solid #e0e3d6;
+  border-radius: 3px;
+  justify-self: start;
+}
+.status-pill.available {
+  color: #405c32;
+  background: #e9efdc;
+  border-color: #d0ddba;
+}
+.season-note {
+  color: #717b69;
+  font-size: 11px;
+  margin: 22px 0 40px;
+  line-height: 1.8;
+}
+.no-events {
+  padding: 35px 25px;
+  color: #64705a;
+}
+.empty .status-pill {
+  margin: 15px 0;
+}
+.empty p + p {
+  margin-top: 15px;
+}
+.event-links {
+  display: flex;
+  gap: 25px;
+  margin-top: 24px;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .season-toolbar {
+    display: block;
+  }
+  .season-filters {
+    margin-top: 18px;
+  }
+  .season-filters input {
+    min-width: 0;
+    width: 60%;
+  }
+  .season-filters select {
+    min-width: 0;
+    width: 40%;
+  }
+  .event-card {
+    grid-template-columns: minmax(0, 1fr) 15px;
+    gap: 8px 12px;
+    padding: 20px;
+  }
+  .event-date {
+    grid-column: 1;
+    font-size: 11px;
+  }
+  .event-card-title {
+    grid-column: 1;
+  }
+  .event-card > .status-pill {
+    grid-column: 1;
+    margin-top: 8px;
+  }
+  .event-card > span:last-child {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .event-card h3 {
+    font-size: 21px;
+  }
+}

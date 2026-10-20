@@ -264,6 +264,7 @@ HTTP 409; clients can reread the status and retry. Only the latest run for an ev
 | `PUT /forecasts/{code}` | Validate and save a complete snapshot; identical documents preserve the revision |
 | `POST /forecasts/{code}/step` | Advance or resume one bounded Monte Carlo batch |
 | `GET /forecasts/{code}` | Read current progress or the completed event forecast, or 404 |
+| `GET /forecasts/{code}/export` | Authenticated atomic read of a matching current snapshot, completed result and engine version |
 
 Recomputing starts from the input priors so scores are not applied twice. An input correction invalidates the old
 result. Publication checks the input revision in the write statement so an older computation cannot overwrite a
