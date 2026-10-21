@@ -7,7 +7,7 @@ from forecast import BATCH_ITERATIONS, BATCH_SECONDS
 from pydantic import BaseModel, ConfigDict, Field
 from snapshot import EventSnapshot
 
-from sim.event import _match_mates, simulate_event
+from sim.event import EventCache, _match_mates, simulate_event
 from sim.pick_model import PickField
 from sim.playoff import playoff
 from sim.selection import alliance_count, alliance_size, select_alliances
@@ -38,13 +38,14 @@ def advance_partners(snapshot: EventSnapshot, comparison: PartnerComparison, che
         n, tally = checkpoint["iterations"], np.array(checkpoint["tally"], dtype=np.int64)
     draw, models = snapshot.draw(), snapshot.models.build()
     progress = snapshot.progress.build() if snapshot.progress else None
+    cache = EventCache()
     started = monotonic()
     for _ in range(min(BATCH_ITERATIONS, snapshot.max_iterations - n)):
         drawn_field, schedule = draw(rng)
         # shortcut: reuse full event draws for qualifications; extract a shared qualification helper if this grows slow.
-        outcome = simulate_event(drawn_field, schedule, snapshot.rule_pack, models, rng, progress=progress)
+        outcome = simulate_event(drawn_field, schedule, snapshot.rule_pack, models, rng, progress=progress, cache=cache)
         trial_seed = int(rng.integers(0, 2**63))
-        mates = _match_mates(schedule)
+        mates = cache.partners if cache.partners is not None else _match_mates(schedule)
         for index, partner in enumerate(comparison.partners):
             candidate_rng = np.random.default_rng(trial_seed)
             remaining = tuple(int(t) for t in outcome.standings.teams if t not in (comparison.captain, partner))

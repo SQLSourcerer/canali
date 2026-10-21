@@ -85,6 +85,41 @@ Original trial and local calibration artifacts are archived under `var/worker-be
 hosted snapshots, exports, native comparisons, sanitized invocation traces, analytics and cost calculations are under
 `var/worker-benchmark/e2e-calibrated-20261021/`. Credentials are excluded from the reports.
 
+## Python simulation optimization
+
+Local validation on October 21 compared the optimized implementation with the simulator from commit `b373cc5`.
+It used the same frozen 24-team qualification and 40-team playoff snapshots as the hosted benchmarks, including
+their original 1-percentage-point target, 1,000-simulation minimum and 2,501-simulation maximum. Both versions
+round-tripped JSON checkpoints after every batch. Each measurement below averages two runs, with version order
+reversed on the second repetition. Timings exclude imports and snapshot validation.
+
+| Case | Simulations to convergence | Original elapsed | Optimized elapsed | Elapsed reduction | Original process CPU | Optimized process CPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 24-team qualifications | 2,500 | 11.35 s | 7.93 s | 30.1% | 11.22 s | 7.92 s |
+| 40-team playoffs | 2,496 | 11.91 s | 6.21 s | 47.8% | 11.80 s | 6.21 s |
+
+The final reports, accumulated counts and RNG states matched exactly across both versions and repetitions.
+Resuming the optimized engine from the original implementation's 1,000-trial checkpoints also produced the exact
+original final reports and checkpoints. These are full converged runs; the earlier exploratory caching experiment
+used fixed 1,000-trial runs.
+
+A packaged-engine browser check at 1,000 qualification trials also exactly matched the native report, including
+every team's probabilities and ranks, the iteration count and standard error.
+
+The changes reuse fixed alliance predictions and schedule relationships, cache qualification tiebreakers only when
+all qualifications are played, and avoid rebuilding award-history features and per-field normalization/seat lookups.
+Caches are local to a run or checkpoint batch, invalidated when their input objects change, and excluded from durable
+state. The models, iteration budgets, convergence checks, random draws and checkpoint format are unchanged.
+
+These native measurements establish neither Cloudflare CPU savings nor browser speedups. The hosted measurements
+and hosting projections above remain based on the preceding implementation until remeasured. Browser runtime
+downloads, ingestion and publication are outside these timings. Engine source hashes change with the optimization;
+deployment must use matching backend and browser sources and recompute forecasts for that engine before publication.
+
+Profiles, the saved pre-change reference implementation, per-run reports and checkpoints, and comparison scripts are
+archived locally under `var/python-performance-20261021/`, with production comparisons in its `production/` directory.
+No hosted simulation was run for this optimization validation.
+
 ## Pennsylvania DECODE season projection
 
 The [hosting cost estimate](hosting-cost-estimate.md) applies these measurements to Pennsylvania's 2025–2026

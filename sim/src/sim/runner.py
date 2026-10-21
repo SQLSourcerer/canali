@@ -10,7 +10,7 @@ from typing import TypedDict
 import numpy as np
 
 from sim.convergence import MIN_ITERATIONS, TOLERANCE, Convergence, tracked_places
-from sim.event import EventField, EventModels, EventOutcome, EventProgress, Slots, simulate_event
+from sim.event import EventCache, EventField, EventModels, EventOutcome, EventProgress, Slots, simulate_event
 from sim.schedule import Schedule, generated_schedule
 from sim.selection import alliance_count
 from warehouse.rules.model import RulePack
@@ -81,11 +81,12 @@ def run_event(
 ) -> EventSummary:
     """Simulate the event until ``Convergence`` is met, the positions it tracks set by the first iteration's field."""
     accumulator: EventAccumulator | None = None
+    cache = EventCache()
     while accumulator is None or not accumulator.convergence.converged(
         tolerance=tolerance, min_iterations=min_iterations
     ):
         field, schedule = draw(rng)
-        outcome = simulate_event(field, schedule, pack, models, rng, slots=slots, progress=progress)
+        outcome = simulate_event(field, schedule, pack, models, rng, slots=slots, progress=progress, cache=cache)
         if accumulator is None:
             teams = np.unique(schedule.stations).tolist()
             accumulator = EventAccumulator(tracked_places(teams, alliance_count(pack.structure, len(teams)), slots))

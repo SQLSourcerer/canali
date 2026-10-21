@@ -7,7 +7,7 @@ import numpy as np
 from snapshot import EventSnapshot
 
 from sim.convergence import tracked_places
-from sim.event import simulate_event
+from sim.event import EventCache, simulate_event
 from sim.runner import EventAccumulator
 from sim.selection import alliance_count
 
@@ -32,6 +32,7 @@ def advance(
     draw = snapshot.draw()
     models = snapshot.models.build()
     progress = None if snapshot.progress is None else snapshot.progress.build()
+    cache = EventCache()
     started = monotonic()
     for _ in range(batch_size):
         if accumulator.convergence.converged(tolerance=snapshot.tolerance, min_iterations=snapshot.min_iterations):
@@ -40,7 +41,7 @@ def advance(
             break
         field, schedule = draw(rng)
         outcome = simulate_event(
-            field, schedule, snapshot.rule_pack, models, rng, slots=snapshot.slots, progress=progress
+            field, schedule, snapshot.rule_pack, models, rng, slots=snapshot.slots, progress=progress, cache=cache
         )
         accumulator.add(
             outcome, first_championship=snapshot.slots is not None and snapshot.slots.first_championship is not None
