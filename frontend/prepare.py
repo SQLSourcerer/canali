@@ -29,6 +29,27 @@ def write_json(path, document):
         Path(temporary.name).unlink(missing_ok=True)
 
 
+def catalog_path(output, season, region):
+    return output / "catalogs" / str(season) / f"{region}.json"
+
+
+def write_catalog(document, output=OUTPUT):
+    write_json(catalog_path(output, document["season"], document["region"]), document)
+    regions = []
+    for path in sorted((output / "catalogs").glob("*/*.json")):
+        catalog = json.loads(path.read_text(encoding="utf-8"))
+        regions.append(
+            {
+                "season": catalog["season"],
+                "region": catalog["region"],
+                "region_name": catalog["region_name"],
+                "catalog_url": f"/generated/catalogs/{catalog['season']}/{catalog['region']}.json",
+                "event_codes": [event["code"] for event in catalog["events"]],
+            }
+        )
+    write_json(output / "index.json", {"regions": regions})
+
+
 def build_engine(output=OUTPUT):
     prepared = runpy.run_path(str(REPO / "worker" / "prepare.py"))
     sys.path.insert(0, str(REPO / "worker" / "src"))
@@ -139,8 +160,7 @@ def main():
         "teams": {str(team): f"Team {team}" for team in snapshot.field.predicted},
     }
     event = publish_event(metadata, snapshot, report["result"], engine)
-    write_json(
-        OUTPUT / "catalog.json",
+    write_catalog(
         {
             "season": snapshot.rule_pack.season,
             "region": "USPA",

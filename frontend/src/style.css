@@ -68,6 +68,7 @@ button {
 }
 main,
 .site-header,
+.region-navigation,
 footer {
   max-width: 1440px;
   margin: auto;
@@ -780,6 +781,7 @@ footer > span:last-child {
 @media (max-width: 1050px) {
   main,
   .site-header,
+  .region-navigation,
   footer {
     padding-left: 25px;
     padding-right: 25px;

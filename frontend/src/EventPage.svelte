@@ -20,7 +20,7 @@
     type PublishedEvent,
   } from "./model";
 
-  let { event }: { event: PublishedEvent } = $props();
+  let { event, region, regionName }: { event: PublishedEvent; region: string; regionName: string } = $props();
   let team = $state("");
   let strengths = $state<Record<string, number>>({});
   let components = $state<ComponentChanges>({});
@@ -297,8 +297,8 @@
 
 <main>
   <p class="breadcrumb">
-    <a href={`/seasons/${event.season}/USPA`}
-      >Pennsylvania / {event.season}–{String(event.season + 1).slice(2)}</a
+    <a href={`/seasons/${event.season}/${region}`}
+      >{regionName} / {event.season}–{String(event.season + 1).slice(2)}</a
     >
     / {event.type}
   </p>

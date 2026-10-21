@@ -9,7 +9,7 @@ from contextlib import contextmanager
 
 from prepare import ROOT, write_json
 
-STATE = ROOT.parent / "var" / "frontend-publication"
+STATE = ROOT.parent / "var" / "forecast-publication"
 
 
 def _lock_file(lock, *, release=False):
@@ -40,18 +40,16 @@ def publication_lock(path):
             _lock_file(lock, release=True)
 
 
-def prepare_site(dist, site):
-    if not (dist / "index.html").is_file():
-        raise ValueError("build the frontend with npm run build before publishing")
-    # Retain prior generated assets so a cached catalog or open page can still resolve them.
-    shutil.copytree(dist, site, dirs_exist_ok=True, ignore=shutil.ignore_patterns("generated"))
-    if not (site / "generated").exists() and (dist / "generated").exists():
-        shutil.copytree(dist / "generated", site / "generated")
-    return site / "generated"
+def prepare_site(site):
+    # Data lives separately from the compiled application; retain old immutable assets.
+    output = site / "generated"
+    output.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "public" / "_headers", site / "_headers")
+    return output
 
 
 def deploy_if_changed(site, state, *, run=subprocess.run):
-    digest = hashlib.sha256((ROOT / "wrangler.toml").read_bytes())
+    digest = hashlib.sha256((ROOT / "data.wrangler.toml").read_bytes())
     for path in sorted(site.rglob("*")):
         if path.is_file():
             digest.update(path.relative_to(site).as_posix().encode())
@@ -65,7 +63,7 @@ def deploy_if_changed(site, state, *, run=subprocess.run):
             str(ROOT.parent / "worker/node_modules/wrangler/bin/wrangler.js"),
             "deploy",
             "--config",
-            str(ROOT / "wrangler.toml"),
+            str(ROOT / "data.wrangler.toml"),
             "--assets",
             str(site.resolve()),
         ],

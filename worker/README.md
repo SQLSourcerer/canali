@@ -317,7 +317,8 @@ or exhausted result. It does not fetch FIRST data, replay seasons or assemble sn
 existing native commands. Competition-day automation must supply updated
 snapshots, including calibrated models and current event context, before this dispatcher can compute them.
 The [native static publisher](../frontend/README.md#automatic-static-publication) exports changed forecasts and deploys
-them together, independently of public visitor requests.
+them to the separate `canali-data` Static Assets deployment, with one catalog per season and region. Application
+deployments are independent of forecast publication; public reads invoke neither computation Workers nor D1.
 
 The latest `forecast_input` is the desired revision. An atomic D1 claim records one active job per event, and its
 Workflow instance ID is derived from the event, input revision, engine and continuation generation. Identical snapshot

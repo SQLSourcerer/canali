@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from prepare import build_engine
+from prepare import build_engine, catalog_path, write_catalog
 from publish import export_catalog
 from snapshot import EventSnapshot
 
@@ -69,29 +69,50 @@ def test_publication_keeps_matching_revisions_rosters_and_content_addressed_asse
             )
 
         catalog = publish([event, {**event, "code": "B"}, {**event, "code": "BR", "regionCode": "BR"}])
+        region_path = catalog_path(tmp_path, 2025, "USPA")
+        index_before = (tmp_path / "index.json").read_bytes()
         assert len(catalog["events"]) == 2
         assert catalog["events"][1]["forecast_url"] is None
         doc = json.loads((tmp_path / Path(catalog["events"][0]["forecast_url"]).name).read_text())
         assert doc["source_revision"] == 7 and doc["teams"]["1"] == "Name 1"
         assert doc["snapshot"]["season_prior"] is None
-        before = (tmp_path / "catalog.json").read_bytes()
-        before_time = (tmp_path / "catalog.json").stat().st_mtime_ns
+        before = region_path.read_bytes()
+        before_time = region_path.stat().st_mtime_ns
         assert publish([event, {**event, "code": "B"}, {**event, "code": "BR", "regionCode": "BR"}]) == catalog
-        assert (tmp_path / "catalog.json").read_bytes() == before
-        assert (tmp_path / "catalog.json").stat().st_mtime_ns == before_time
+        assert region_path.read_bytes() == before
+        assert region_path.stat().st_mtime_ns == before_time
         packet["revision"] = 8
         updated = publish([event, {**event, "code": "B"}])
+        assert (tmp_path / "index.json").read_bytes() == index_before
         assert updated["events"][0]["forecast_url"] != catalog["events"][0]["forecast_url"]
         assert (tmp_path / Path(catalog["events"][0]["forecast_url"]).name).exists()
-        before = (tmp_path / "catalog.json").read_bytes()
+        before = region_path.read_bytes()
         packet["engine_version"] = "obsolete"
         with pytest.raises(ValueError, match="engine differs"):
             publish([event])
-        assert (tmp_path / "catalog.json").read_bytes() == before
+        assert region_path.read_bytes() == before
         packet["engine_version"] = engine["engine_version"]
         teams.pop()
         with pytest.raises(ValueError, match="roster differs"):
             publish([event])
-        assert (tmp_path / "catalog.json").read_bytes() == before
+        assert region_path.read_bytes() == before
         with pytest.raises(ValueError, match="no matching"):
             publish([])
+
+
+def test_region_and_season_publication_preserves_other_catalogs_and_indexes_membership(tmp_path):
+    pa = {"season": 2025, "region": "USPA", "region_name": "Pennsylvania", "events": [{"code": "Q1"}]}
+    write_catalog(pa, tmp_path)
+    before = catalog_path(tmp_path, 2025, "USPA").read_bytes()
+    write_catalog({**pa, "region": "USNJ", "region_name": "New Jersey"}, tmp_path)
+    write_catalog({**pa, "season": 2024}, tmp_path)
+    assert catalog_path(tmp_path, 2025, "USPA").read_bytes() == before
+    index = json.loads((tmp_path / "index.json").read_text())
+    assert {(r["season"], r["region"]) for r in index["regions"]} == {
+        (2025, "USPA"),
+        (2025, "USNJ"),
+        (2024, "USPA"),
+    }
+    write_catalog({**pa, "events": [{"code": "Q2"}]}, tmp_path)
+    index = json.loads((tmp_path / "index.json").read_text())
+    assert next(r for r in index["regions"] if r["season"] == 2025 and r["region"] == "USPA")["event_codes"] == ["Q2"]
