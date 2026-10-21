@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import EventPage from "./EventPage.svelte";
   import SeasonPage from "./SeasonPage.svelte";
+  import { CATALOG_URL, CATALOG_REFRESH_MS, readPublication, forecastChanged } from "./publication";
   import {
     formatDate,
     routeFor,
@@ -17,28 +18,17 @@
   let ready = $state(false);
   let error = $state("");
   let notFound = $state(false);
+  let updateAvailable = $state(false);
   const seasonUrl = $derived(
     catalog ? `/seasons/${catalog.season}/${catalog.region}` : "/",
   );
 
   onMount(() => {
     const controller = new AbortController();
-    async function read(url: string) {
-      const response = await fetch(url, {
-        cache: "no-cache",
-        signal: controller.signal,
-      });
-      if (
-        !response.ok ||
-        !response.headers.get("content-type")?.includes("application/json")
-      )
-        throw new Error(
-          "Published data is unavailable. Please try again later.",
-        );
-      return response.json();
-    }
+    let timer: number | undefined;
+    let checking = false;
     async function load() {
-      catalog = await read("/generated/catalog.json");
+      catalog = await readPublication<Catalog>(CATALOG_URL, controller.signal);
       const selected = routeFor(location.pathname, catalog!);
       if (!selected) {
         notFound = true;
@@ -47,7 +37,7 @@
       if (selected === "season") return;
       listing = selected;
       if (selected.forecast_url) {
-        const published: PublishedEvent = await read(selected.forecast_url);
+        const published = await readPublication<PublishedEvent>(selected.forecast_url, controller.signal);
         if (
           published.code !== selected.code ||
           published.season !== selected.season
@@ -56,12 +46,41 @@
         event = published;
       }
     }
+    async function refresh() {
+      if (checking || document.visibilityState === "hidden") return;
+      checking = true;
+      try {
+        const next = await readPublication<Catalog>(CATALOG_URL, controller.signal);
+        const selected = routeFor(location.pathname, next);
+        if (listing) {
+          updateAvailable = forecastChanged(listing, selected === "season" ? null : selected);
+          if (!event && selected && selected !== "season" && !selected.forecast_url) listing = selected;
+        } else if (selected === "season") {
+          catalog = next;
+        } else if (selected) {
+          updateAvailable = true;
+        }
+      } catch {
+        // Keep the loaded publication and any running scenario through a failed refresh.
+      } finally {
+        checking = false;
+      }
+    }
     load()
+      .then(() => {
+        if (controller.signal.aborted) return;
+        timer = window.setInterval(refresh, CATALOG_REFRESH_MS);
+        document.addEventListener("visibilitychange", refresh);
+      })
       .catch((e) => {
         if (e.name !== "AbortError") error = e.message;
       })
       .finally(() => (ready = true));
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   });
 </script>
 
@@ -83,6 +102,12 @@
   </nav>
   <span class="header-caption">FIRST TECH CHALLENGE</span>
 </header>
+{#if updateAvailable}
+  <aside class="publication-update" role="status">
+    <span>An updated publication is available.{#if event}{" "}Your current scenario is unchanged.{/if}</span>
+    <button onclick={() => location.reload()}>Load update</button>
+  </aside>
+{/if}
 {#if error}
   <main class="empty">
     <p class="eyebrow">DATA UNAVAILABLE</p>
@@ -131,3 +156,15 @@
     ></span
   ><span>Independent FTC statistics</span>
 </footer>
+
+<style>
+  .publication-update {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid currentColor;
+  }
+</style>

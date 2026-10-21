@@ -75,6 +75,15 @@ def test_publication_keeps_matching_revisions_rosters_and_content_addressed_asse
         assert doc["source_revision"] == 7 and doc["teams"]["1"] == "Name 1"
         assert doc["snapshot"]["season_prior"] is None
         before = (tmp_path / "catalog.json").read_bytes()
+        before_time = (tmp_path / "catalog.json").stat().st_mtime_ns
+        assert publish([event, {**event, "code": "B"}, {**event, "code": "BR", "regionCode": "BR"}]) == catalog
+        assert (tmp_path / "catalog.json").read_bytes() == before
+        assert (tmp_path / "catalog.json").stat().st_mtime_ns == before_time
+        packet["revision"] = 8
+        updated = publish([event, {**event, "code": "B"}])
+        assert updated["events"][0]["forecast_url"] != catalog["events"][0]["forecast_url"]
+        assert (tmp_path / Path(catalog["events"][0]["forecast_url"]).name).exists()
+        before = (tmp_path / "catalog.json").read_bytes()
         packet["engine_version"] = "obsolete"
         with pytest.raises(ValueError, match="engine differs"):
             publish([event])

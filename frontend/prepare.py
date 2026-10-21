@@ -6,6 +6,7 @@ import io
 import json
 import runpy
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from tarfile import TarFile, TarInfo
@@ -17,7 +18,15 @@ OUTPUT = ROOT / "public" / "generated"
 
 def write_json(path, document):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(document, allow_nan=False), encoding="utf-8")
+    data = json.dumps(document, allow_nan=False)
+    if path.exists() and path.read_text(encoding="utf-8") == data:
+        return
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as temporary:
+        temporary.write(data)
+    try:
+        Path(temporary.name).replace(path)
+    finally:
+        Path(temporary.name).unlink(missing_ok=True)
 
 
 def build_engine(output=OUTPUT):
@@ -46,14 +55,17 @@ def build_engine(output=OUTPUT):
     output.mkdir(parents=True, exist_ok=True)
     filename = f"engine-{digest}.tar"
     (output / filename).write_bytes(buffer.getvalue())
-    return {
+    engine = {
         "engine_url": f"/generated/{filename}",
         "engine_sha256": digest,
         "engine_version": runpy.run_path(str(REPO / "worker" / "src" / "engine_version.py"))["ENGINE_VERSION"],
     }
+    return engine
 
 
-def publish_event(metadata, snapshot, forecast, engine, *, revision=None, output=OUTPUT):
+def publish_event(
+    metadata, snapshot, forecast, engine, *, revision=None, output=OUTPUT, previous=None, computed_at=None
+):
     if set(forecast["teams"]) != {str(team) for team in snapshot.field.predicted}:
         raise ValueError("result teams must match snapshot teams")
     source_hash = hashlib.sha256(snapshot.model_dump_json().encode()).hexdigest()
@@ -61,12 +73,19 @@ def publish_event(metadata, snapshot, forecast, engine, *, revision=None, output
     document = {
         **metadata,
         **engine,
-        "published_at": datetime.now(UTC).isoformat(),
         "source_revision": revision,
         "source_snapshot_sha256": source_hash,
         "snapshot": frozen.model_dump(mode="json"),
         "forecast": forecast,
     }
+    if previous and {k: v for k, v in previous.items() if k != "published_at"} == document:
+        document["published_at"] = previous["published_at"]
+    else:
+        document["published_at"] = (
+            datetime.fromisoformat(computed_at).replace(tzinfo=UTC).isoformat()
+            if computed_at
+            else datetime.now(UTC).isoformat()
+        )
     data = json.dumps(document, allow_nan=False).encode()
     filename = f"event-{hashlib.sha256(data).hexdigest()}.json"
     (output / filename).write_bytes(data)

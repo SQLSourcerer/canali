@@ -1,4 +1,5 @@
 node_modules/
+.wrangler/
 public/generated/
 .svelte-kit/
 test-results/

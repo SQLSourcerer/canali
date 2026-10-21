@@ -1,10 +1,14 @@
 # Canali frontend
 
-Vite + Svelte 5, served as static files. The event page reads a published forecast and snapshot; viewing shared
-results does not load Python or call the private computation Worker. The Pennsylvania season page lists competitions
+Vite + Svelte 5, served entirely as static assets. Public requests do not invoke computation Workers or D1. The event
+page reads a published forecast and snapshot; custom scenarios run on the visitor's device. The Pennsylvania season page lists competitions
 from FIRST, with dates, venues, event filters and forecast availability. Stable URLs use `/seasons/2025/USPA` and
 `/events/2025/USPAHAQ1`. A custom scenario loads Pyodide in a module
 Web Worker and runs the same Python simulator on the visitor's device.
+
+The event header identifies the loaded forecast by its last included official match, or by alliance selection before
+playoffs begin. Publication time is secondary. This describes the loaded snapshot, including while a newer
+publication is available.
 
 ## Run locally
 
@@ -48,13 +52,47 @@ season-revision guards used by result reads. Running or exhausted runs expose st
 The publisher validates the local engine version, snapshot, result roster and FIRST team roster, then publishes team
 names with the frozen inputs and forecast. It records the source revision and snapshot hash. Missing forecasts remain
 listed as not published; a source or engine correction removes them from the next catalog until recomputed.
-Publication is a snapshot: an already deployed static forecast remains visible until the next export and deploy.
+The same static publication is used by Vite previews and the hosted site.
 
 `public/generated/catalog.json` points to content-addressed event JSON and engine TAR files. The catalog is replaced
 only after the export succeeds; authentication, engine or roster failures leave the existing catalog intact. Immutable
 asset URLs keep a browser's custom simulation tied to the published forecast it loaded. Re-exporting never recomputes
 the Monte Carlo. Old hashed assets can be removed from the local generated directory when no retained catalog uses
 them. The default publisher includes scrimmages, qualifiers, championships and off-season events, excluding kickoffs.
+
+## Automatic static publication
+
+Build the frontend once with `npm run build`, then run the native publisher on the same always-on host as the importer.
+From the repository root, with FIRST credentials, backend Access/bearer credentials and Cloudflare deployment
+credentials available to that process:
+
+```powershell
+uv run python frontend/publish.py 2025 --region USPA --base-url https://canali-benchmark.mjhanson.workers.dev --label "Historical replay · demo models, uniform priors, no advancement assumptions" --watch --deploy --interval-s 60
+```
+
+Each cycle exports all current forecasts into a staging asset set, coalescing changes across events. Unchanged event
+documents keep their timestamps and hashed URLs, and an unchanged catalog keeps its bytes and modification time.
+Publication timestamps use computation time when available. The publisher reuses the compiled frontend and deploys
+the complete static asset set only when its content changes; it does not rerun Vite or Monte Carlo each cycle.
+
+`var/frontend-publication/site/` retains published snapshots and engine archives so cached catalogs and open pages can
+resolve older URLs. `deployed.json` records only the last successful deployment. Failed source reads, validation or
+deployments leave the hosted publication available and are retried after the interval. An OS file lock permits one
+publisher at a time and releases automatically when the process exits. The interval starts after a cycle finishes;
+cycles do not overlap. Use a process supervisor to restart the publisher after a host or process failure.
+
+`--deploy` without `--watch` performs one export and deploys only if changed, suitable for an external scheduler.
+`--watch` without `--deploy` repeatedly exports into `public/generated/` for local use. Stop a watcher with Ctrl+C.
+Keep the staging directory and deployment marker together between runs. After rebuilding client code or changing the
+engine, restart the publisher with sources matching the backend. Apply all backend migrations, including
+`0007_forecast_timestamps.sql`, before deploying the updated computation backend.
+
+The browser revalidates the static `/generated/catalog.json` every 60 seconds while visible and when returning to
+the tab. `Cache-Control: no-cache` permits the browser to use its cached catalog after an ETag/Last-Modified check.
+Content-addressed snapshots and engines use long-lived immutable caching. The season page refreshes its listings;
+an event page offers **Load update** when its snapshot URL changes or the forecast is withdrawn. The current snapshot,
+custom results and running scenario remain untouched until the visitor chooses to reload. Failed checks keep the
+loaded publication. Both catalog checks and snapshot downloads stay on the static asset path.
 
 ## Prepare a standalone demonstration
 
@@ -94,11 +132,11 @@ npm run build
 node ../worker/node_modules/wrangler/bin/wrangler.js deploy --config wrangler.toml
 ```
 
-The deployment is named `canali-frontend`; it has no D1 binding or credentials. Its static asset set is published
-together so event snapshots and engine files stay consistent. Generated forecasts are public, while mutation and
-export endpoints on the Python backend remain private. No Cloudflare account token, benchmark bearer token or FIRST
-credential belongs in frontend code, Vite environment variables or published JSON. Export/build/deploy is currently
-an operator command, rather than a scheduled publication process.
+The deployment is named `canali-frontend`; it has no request handler, backend binding, D1 binding or credentials.
+Its static asset set is deployed together so metadata, snapshots and browser engine files stay consistent. Forecasts
+are public; mutation and export HTTP endpoints on the Python backend remain private. No Cloudflare account token,
+benchmark bearer token or FIRST credential belongs in frontend code, Vite environment variables or published JSON.
+The native publisher holds those credentials and its metered work is independent of public visitor traffic.
 
 ## Custom simulations
 
@@ -214,3 +252,5 @@ After packaging changes, also compare browser results with the native result for
 Route tests distinguish season, event and unknown URLs. Publication tests check deterministic engine bundles,
 matching revisions and rosters, missing forecasts and preservation of the existing catalog on failure. D1 export
 tests reject obsolete inputs, engines and season dependencies, and withhold unfinished snapshots.
+Publication tests cover unchanged exports, deployment deduplication, retry after failure, exclusive publisher locking
+and static-only hosting configuration. Browser helper tests cover cache modes and changed or withdrawn snapshot URLs.

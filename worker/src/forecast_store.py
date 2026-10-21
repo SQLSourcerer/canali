@@ -18,7 +18,8 @@ INITIALIZE = (
     + source_current("i")
     + " "
     "ON CONFLICT(event_code) DO UPDATE SET input_revision = excluded.input_revision, "
-    "engine_version = excluded.engine_version, step = 0, checkpoint = '{}', status = 'running', result = NULL "
+    "engine_version = excluded.engine_version, step = 0, checkpoint = '{}', status = 'running', result = NULL, "
+    "computed_at = NULL "
     "WHERE forecast_state.input_revision != excluded.input_revision "
     "OR forecast_state.engine_version != excluded.engine_version"
 )
@@ -28,13 +29,14 @@ READ_STATE = (
     "WHERE s.event_code = ? AND s.engine_version = ? AND " + source_current("i")
 )
 EXPORT = (
-    "SELECT i.document AS snapshot, s.input_revision, s.engine_version, s.status, s.result "
+    "SELECT i.document AS snapshot, s.input_revision, s.engine_version, s.status, s.result, s.computed_at "
     "FROM forecast_state s JOIN forecast_input i "
     "ON i.event_code = s.event_code AND i.revision = s.input_revision "
     "WHERE s.event_code = ? AND s.engine_version = ? AND " + source_current("i")
 )
 SAVE_STATE = (
-    "UPDATE forecast_state SET checkpoint = ?, status = ?, result = ?, step = step + 1 "
+    "UPDATE forecast_state SET checkpoint = ?, status = ?, result = ?, step = step + 1, "
+    "computed_at = CURRENT_TIMESTAMP "
     "WHERE event_code = ? AND input_revision = ? AND engine_version = ? AND step = ? "
     "AND EXISTS (SELECT 1 FROM forecast_input i WHERE event_code = ? AND revision = ? AND "
     + source_current("i")
@@ -42,12 +44,12 @@ SAVE_STATE = (
 )
 
 SAVE_RESULT = (
-    "INSERT INTO forecast_state(event_code, input_revision, engine_version, status, result) "
-    "SELECT event_code, revision, ?, 'complete', ? FROM forecast_input i "
+    "INSERT INTO forecast_state(event_code, input_revision, engine_version, status, result, computed_at) "
+    "SELECT event_code, revision, ?, 'complete', ?, CURRENT_TIMESTAMP FROM forecast_input i "
     "WHERE event_code = ? AND revision = ? AND document = ? AND " + source_current("i") + " "
     "ON CONFLICT(event_code) DO UPDATE SET input_revision = excluded.input_revision, "
     "engine_version = excluded.engine_version, checkpoint = '{}', step = forecast_state.step + 1, "
-    "status = 'complete', result = excluded.result RETURNING input_revision"
+    "status = 'complete', result = excluded.result, computed_at = excluded.computed_at RETURNING input_revision"
 )
 
 
@@ -149,6 +151,8 @@ async def export(db, request, code: str) -> tuple[dict, int]:
         "status": row.status,
         "snapshot": json.loads(row.snapshot) if row.status == "complete" else None,
         "forecast": report.get("result") if row.status == "complete" else None,
+        "snapshot_sha256": hashlib.sha256(row.snapshot.encode()).hexdigest() if row.status == "complete" else None,
+        "computed_at": row.computed_at,
     }, 200
 
 
