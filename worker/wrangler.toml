@@ -60,7 +60,8 @@ crons = []
 required = ["BENCHMARK_TOKEN"]
 
 [env.benchmark.limits]
-cpu_ms = 5000
+# Workflow execution can accumulate CPU across multiple checkpointed batches.
+cpu_ms = 300000
 
 [env.benchmark.observability]
 enabled = true

@@ -5,7 +5,8 @@ EPA/pRidge totals and match forecasts, plus the complete single-event Monte Carl
 playoffs, judged awards and advancement. A native importer fetches one event's official FIRST qualification data
 without Postgres. D1 can replay an imported season corpus to supply pre-event total and component EPA priors.
 Fitted simulation models are still prepared separately.
-Qualification-stage snapshots can be assembled directly from the imported event and its D1 component history.
+Snapshots can be assembled from the imported event and its D1 component history, including published alliance
+selection, playoff progress and current-event playoff EPA updates.
 
 ## Run locally
 
@@ -169,7 +170,7 @@ prior-season normalized ratings restarts replay without requiring a source reimp
 `import_event.py --season-priors` also carries component priors into its saved input, while its qualification calculation
 still updates totals only. Use the snapshot assembler below to connect component ratings to the full event simulator.
 
-## Assemble a qualification-stage forecast
+## Assemble a forecast from official progress
 
 After importing and replaying a component corpus, run this from the repository root:
 
@@ -189,11 +190,24 @@ out of the snapshot and do not update its current-event ratings. `--through 0` s
 schedule is published, the simulator generates one. For historical backtests, supply models, context and season
 initialization appropriate to the cutoff date; this option only truncates current-event match updates and progress.
 
-Omitting `--through` uses all currently scored qualifications. The native command checks FIRST's published alliances
-to identify the event stage. Once alliance selection is published, assembly requires an explicit historical cutoff.
-Use `--after-qualifications` to retain all qualification results and reconstruct the event before selection.
-Published alliance selections, playoff progress and playoff EPA updates are not assembled in this slice. The prepared
-snapshot endpoint still accepts those inputs when supplied separately.
+Omitting `--through` uses the latest event stage. The native command fetches FIRST's seated alliances and, once selection
+is published, the playoff hybrid schedule and score breakdowns. The Worker fixes those alliances in seed order and
+retains the winning seed of each decisive playoff game. Ties count as played matches and update ratings, but do not
+increment the decisive-game number. Completed qualifications are required before selection can be included.
+
+Current-event playoff scores update component EPA with the native elimination weight, without increasing qualification
+match counts. Both final scores and reconciled breakdowns are required; no-shows receive no rating update. Match
+participants must match the seated alliances, and results must form a valid bracket prefix, including best-of-three
+finals and the double-elimination final reset. Incomplete or inconsistent upstream data is rejected before replacing a
+valid snapshot; retry when FIRST's endpoints agree. Backup substitutions are not represented by the current simulator;
+stations that differ from the seated alliance are rejected.
+
+An explicit `--through N` excludes all alliance selection and playoff data. Use `--after-qualifications` to retain all
+qualification results and reconstruct the event immediately before selection. The season corpus still replays
+qualifications only; the new playoff updates apply to the target snapshot, rather than later events' season priors.
+Direct assembly callers supply FIRST's raw `alliances`, `playoff_schedule` and `playoff_scores` payloads alongside
+`selection_published: true`; the native command collects those automatically. Historical `through` requests ignore
+those later-stage payloads.
 
 `--models` accepts a `ModelsInput` JSON object or a prepared snapshot containing `models`. With a prepared snapshot it
 also reads its seed, convergence settings and matches-per-team setting; its field, schedule and results are ignored.
@@ -207,7 +221,7 @@ no prior Inspire winners and no advancement slots. Its empty assumptions demonst
 replaced with real context for meaningful advancement forecasts. Context team keys must belong to the event roster;
 already-advanced teams and historical alliance partners may include teams outside the field.
 
-The snapshot is saved under `/forecasts/2025-USNJCMPPKWY`, with its qualification cutoff and season revision, and
+The snapshot is saved under `/forecasts/2025-USNJCMPPKWY`, with its played-match count and season revision, and
 archived in `var/worker-forecast/2025-USNJCMPPKWY/snapshot.json`. Add `--run` to resume bounded Monte Carlo requests until
 convergence or exhaustion and save `result.json` alongside it. Identical snapshots preserve their input revision,
 checkpoint and result, so repeating an interrupted command can resume its computation.
@@ -230,7 +244,7 @@ model coefficients. It illustrates the snapshot accepted by `/forecasts/{code}`:
 - `slots`: advancement counts and already-advanced teams, or null if the event offers no slots.
 - `seed`, `tolerance`, `min_iterations`, `max_iterations`: reproducibility, convergence and the total work budget.
 
-The assembler supplies component ratings for qualification-stage snapshots, and callers can also upload prepared
+The assembler supplies component ratings and published progress throughout the event, and callers can also upload prepared
 snapshots directly. Integer team keys are represented as strings in JSON. RP curve recoveries use
 `{"kind": "identity"}`, `{"kind": "ratio", "value": 0.25}`, or `{"kind": "floor_divide", "value": 20}`.
 
@@ -242,6 +256,13 @@ The response has `status`, `iterations`, `standard_error` and `result`. A runnin
 published result. Once the shared simulator's convergence criterion is met it returns `complete` with HTTP 200 and
 the same team summary as the native runner. Hitting `max_iterations` first returns `exhausted`, also with HTTP 200,
 and no published result. Repeating a terminal step returns the saved report without further computation.
+
+`tolerance` is an absolute Monte Carlo standard-error target for the tracked cumulative advancement-order
+probabilities, not relative error or model accuracy. The maximum Bernoulli standard error after `n` simulations is
+`0.5 / sqrt(n)`. Because convergence uses a strict inequality, `floor(1 / (4 * tolerance²)) + 1` simulations suffice
+for any tracked probability, subject to `min_iterations`. A 1-percentage-point target therefore needs at most 2,501
+simulations; the 10,000-iteration default budget is larger than necessary for that target. An iteration budget bounds
+successful simulation work, not CPU consumed by failed attempts or retries, and a CPU limit is not a spending cap.
 
 Results include rank distributions and captain, selection, playoff-win and advancement probabilities. Judged awards
 are simulated as part of advancement; the existing summary does not expose separate award-win probabilities.
@@ -260,7 +281,7 @@ HTTP 409; clients can reread the status and retry. Only the latest run for an ev
 | `PUT /seasons/{year}/events/{code}` | Import event metadata, teams, qualification schedule and optional score breakdowns |
 | `POST /seasons/{year}/step` | Rate one event and checkpoint, or report the imported corpus complete |
 | `GET /seasons/{year}/priors/{code}` | Read roster total/component priors, K/M schedules and their season revision |
-| `POST /seasons/{year}/forecasts/{code}` | Assemble and save a qualification snapshot from models and explicit context |
+| `POST /seasons/{year}/forecasts/{code}` | Assemble and save an event snapshot from models, context and official progress |
 | `PUT /imports/{season}-{code}` | Atomically import FIRST payloads and explicit model parameters |
 | `GET /imports/{season}-{code}` | Read the current imported source payloads and parameters, or 404 |
 | `PUT /events/{code}` | Validate and save prepared inputs at a new revision |
@@ -268,6 +289,8 @@ HTTP 409; clients can reread the status and retry. Only the latest run for an ev
 | `GET /events/{code}` | Read the current revision's completed result, or 404 |
 | `PUT /forecasts/{code}` | Validate and save a complete snapshot; identical documents preserve the revision |
 | `POST /forecasts/{code}/step` | Advance or resume one bounded Monte Carlo batch |
+| `POST /forecasts/{code}/dispatch` | Dispatch or reconcile this event's durable Workflow without starting other events |
+| `POST /forecasts/{code}/retry` | Explicitly release a failed event and dispatch recovery from its checkpoint |
 | `GET /forecasts/{code}` | Read current progress or the completed event forecast, or 404 |
 | `PUT /forecasts/{code}/result` | Save a converged native result for the exact input revision, snapshot hash and engine |
 | `GET /forecasts/{code}/export` | Authenticated atomic read of a matching current snapshot, completed result and engine version |
@@ -290,9 +313,11 @@ The `ForecastWorkflow` advances stored snapshots without a client driving `/step
 includes a minute-based Cron Trigger; the hosted benchmark keeps `crons = []` so benchmarks remain operator-driven.
 To enable hosted dispatch, apply migration `0006_forecast_jobs.sql`, set `env.benchmark.triggers.crons` to
 `["* * * * *"]` and deploy the matching backend. This schedules every current stored snapshot that has no completed
-or exhausted result. It does not fetch FIRST data, replay seasons, assemble snapshots, or export and deploy the public
-site. Those stages still need their existing native commands. Competition-day automation must supply updated
+or exhausted result. It does not fetch FIRST data, replay seasons or assemble snapshots. Those stages still need their
+existing native commands. Competition-day automation must supply updated
 snapshots, including calibrated models and current event context, before this dispatcher can compute them.
+The [native static publisher](../frontend/README.md#automatic-static-publication) exports changed forecasts and deploys
+them together, independently of public visitor requests.
 
 The latest `forecast_input` is the desired revision. An atomic D1 claim records one active job per event, and its
 Workflow instance ID is derived from the event, input revision, engine and continuation generation. Identical snapshot
@@ -307,9 +332,13 @@ and exhausted outcomes remain in D1 after Workflow retention expires. Exhaustion
 or inputs before another automatic run; it is not treated as a converged forecast.
 
 Each instance executes at most 256 bounded batches. If more work remains, the next tick starts a serial continuation
-with a new generation and the existing D1 checkpoint. Workflow steps retry transient failures. An instance that ends
-errored or terminated is recorded as `errored` and is not automatically restarted for the same inputs. Dispatch errors
-are logged by event and cause the scheduled invocation to fail after attempting the other events.
+with a new generation and the existing D1 checkpoint. Simulation steps explicitly disable automatic retries. Any step
+failure, including a CPU or memory limit, ends the instance instead of repeating charged computation. An instance that
+ends errored or terminated is recorded as `errored` and blocks automatic computation for that event, even after new
+match results, input revisions or engine changes. Other events continue. Failed events require explicit operator
+recovery; there is no automatic exception classification or added I/O retry loop. Repeating an interrupted dispatch
+can still recover creation of the same deterministic instance without creating concurrent simulations. Dispatch
+errors are logged by event and cause the scheduled invocation to fail after attempting the other events.
 
 Inspect instance status in Cloudflare Workflows and ownership with a D1 query:
 
@@ -317,11 +346,15 @@ Inspect instance status in Cloudflare Workflows and ownership with a D1 query:
 uv run pywrangler d1 execute canali-benchmark --env benchmark --remote --command "SELECT * FROM forecast_job"
 ```
 
-After resolving a failure, send an authenticated `POST /forecasts/{code}/retry` to restart that exact instance and resume
-its D1 checkpoint. This route accepts only recorded failed jobs. Retry a lost restart response by repeating the request;
-a running job returns 409. If Cloudflare has already expired or deleted the failed instance, supply a new snapshot
-revision instead. New input or engine revisions can also supersede a failed job on the next scheduled tick. For a local
-runtime check, start `pywrangler dev --test-scheduled`, upload a snapshot and invoke Wrangler's local scheduled API:
+After correcting the failure's cause, send an authenticated `POST /forecasts/{code}/retry`. This route atomically
+releases only a recorded failed job and dispatches a fresh instance using the current deployment. Unchanged inputs
+and engine resume the existing D1 checkpoint, including a checkpoint whose write succeeded before its response was
+lost. Changed inputs or engine start the latest forecast with a fresh checkpoint. Recovery also works after the old
+Workflow instance expires. Concurrent recovery requests cannot create two active instances. Repeating a request after
+recovery has started returns 409; read status with `/dispatch` before retrying again. If dispatch is interrupted after
+the explicit release, subsequent ticks recover the authorized dispatch. Resolving a source dependency can also be
+necessary before released work becomes eligible. For a local runtime check, start `pywrangler dev --test-scheduled`,
+upload a snapshot and invoke Wrangler's local scheduled API:
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8787/cdn-cgi/local/explorer/api/local/scheduled?worker=canali-local' -ContentType 'application/json' -Body '{"cron":"* * * * *"}'
@@ -347,7 +380,7 @@ uv run python worker/local_forecast.py var/worker-forecast/2025-USPAHAQ1/snapsho
 Repeat assembly and native computation for the other events. `--after-qualifications` requires a complete scored
 qualification schedule and reconstructs the event before alliance selection and playoffs. Played qualifications stay
 fixed; later alliances and playoff results are excluded. An explicit `--through N` also permits a historical snapshot
-at the end of qualifications; omitting a cutoff still rejects an event with published selection.
+at the end of qualifications; omitting a cutoff includes published selection and playoff results.
 
 The fixture's score/RP coefficients and empty award history are demo assumptions, and its null advancement slots
 produce no advancement estimates. Pennsylvania-only replay also omits teams' competition history outside the region
@@ -364,18 +397,23 @@ The authenticated result endpoint validates roster, rank distributions, probabil
 convergence. Its atomic write rejects changed inputs or linked season revisions. Results carry the source fingerprint
 from the native runner; the backend does not rerun the simulation to prove the operator's numerical output.
 
-Finally, run `frontend/publish.py` against the hosted backend and build/deploy the frontend as described in
-the [frontend README](../frontend/README.md#publish-from-d1). That preserves the region catalog, real team names,
-immutable snapshots and browser scenario tools.
+Prepare the catalog and matching browser engine with `frontend/publish.py`, then build/deploy the frontend as described
+in the [frontend README](../frontend/README.md#automatic-static-publication). Its watcher exports and deploys later
+completed forecasts automatically while reusing the compiled frontend. Public visitors read only static assets.
 
 ## Hosted benchmark
+
+See the [October 2026 convergence and execution measurements](../docs/forecast-benchmark-2026-10-21.md) for
+local iteration counts, the hosted CPU-cap retry behavior and the remaining limits of the cost estimate.
 
 The project's deployed benchmark is `https://canali-benchmark.mjhanson.workers.dev`; it requires both a Cloudflare
 Access service token and the benchmark bearer token.
 
 The `benchmark` environment is an opt-in deployment with its own D1 database, a required `BENCHMARK_TOKEN` secret,
 and invocation logs. It uses a workers.dev address, with preview URLs disabled. It is configured for Workers Paid,
-with `cpu_ms = 5000` to cap requests at five CPU seconds. The free plan can be used for deployment and basic checks
+with `cpu_ms = 300000` to allow up to five CPU minutes per invocation. A five-second cap caused repeated CPU-limit
+interruptions during hosted Workflow execution across multiple batches, despite each batch's elapsed-time budget.
+The free plan can be used for deployment and basic checks
 after removing that setting, but its 10 ms CPU limit may stop simulation requests. The configured cap bounds one invocation;
 it is not an account spending cap.
 Neither local development nor a dry-run build requires a paid subscription or creates remote resources.
@@ -415,8 +453,9 @@ does not return the saved secret's value.
 ### Cloudflare Access
 
 Protect only `canali-benchmark` with a Worker-level Access application for **all traffic**. This covers its production
-and preview addresses, routes and future custom domains. Keep `canali-frontend` public; shared results and browser
-simulations do not need backend access. Access is configured separately from Wrangler deployments and requires an
+and preview addresses, routes and future custom domains. Keep `canali-frontend` public; browsers read static forecasts
+and perform custom simulations locally. The native publisher uses authenticated private exports and holds deployment
+credentials. Access is configured separately from Wrangler deployments and requires an
 initial Zero Trust Free organization in the Cloudflare account.
 
 The project's active policy is **Canali native tools only**, with Service Auth restricted to the **Canali native tools**
@@ -523,6 +562,9 @@ Assembly tests verify native ratings at the cutoff, recovered scoring fields, st
 masking of later outcomes, generated schedules, explicit context, identical-input resume, and stale-season rejection
 on snapshot writes, checkpoint writes and result reads. A SQLite-backed assembled forecast is compared with native
 simulation.
+Full-event tests cover seated alliances, tied-game replay, completed finals, playoff rating updates, no-shows, foul
+subtraction, invalid bracket prefixes and preserving valid inputs after rejected corrections. Export tests verify
+that only completed matching revisions and engines are exposed and that season corrections hide stale results.
 Access tests cover fail-closed hosted authentication and loopback-only local access. Benchmark client tests cover
 progress, request budgets and HTTP failures.
 Dispatcher tests cover concurrent ticks, interrupted creation, revision coalescing, persistent completion, explicit
