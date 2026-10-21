@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from access import allowed
 from assemble import handle as handle_assembly
 from compute import compute, validate
-from dispatch import dispatch, retry_job, run_job
+from dispatch import dispatch, dispatch_job, retry_job, run_job
 from engine_version import ENGINE_VERSION
 from first_event import handle as handle_import
 from forecast_store import export as export_forecast
@@ -34,10 +34,6 @@ class WorkflowBinding:
     async def status(self, identifier):
         instance = await self.binding.get(identifier)
         return (await instance.status()).status
-
-    async def restart(self, identifier):
-        instance = await self.binding.get(identifier)
-        await instance.restart()
 
 
 class ForecastWorkflow(WorkflowEntrypoint):
@@ -87,12 +83,16 @@ class Default(WorkerEntrypoint):
                 return Response.json(report, status=status)
             except (ValueError, KeyError, TypeError) as exc:
                 return Response.json({"error": str(exc)}, status=400)
-        forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step|/export|/result|/retry)?", path)
+        forecast_route = re.fullmatch(
+            r"/forecasts/([A-Za-z0-9_-]{1,64})(/step|/export|/result|/retry|/dispatch)?", path
+        )
         if forecast_route is not None:
             code, step = forecast_route.groups()
             try:
                 report, status = (
-                    await retry_job(self.env.DB, WorkflowBinding(self.env.FORECAST_WORKFLOW), code, request.method)
+                    await dispatch_job(self.env.DB, WorkflowBinding(self.env.FORECAST_WORKFLOW), code, request.method)
+                    if step == "/dispatch"
+                    else await retry_job(self.env.DB, WorkflowBinding(self.env.FORECAST_WORKFLOW), code, request.method)
                     if step == "/retry"
                     else await upload_result(self.env.DB, request, code)
                     if step == "/result"

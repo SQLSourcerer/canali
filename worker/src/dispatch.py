@@ -17,7 +17,7 @@ CLAIM = (
     "ON CONFLICT(event_code) DO UPDATE SET input_revision = excluded.input_revision, "
     "engine_version = excluded.engine_version, generation = excluded.generation, "
     "instance_id = excluded.instance_id, status = 'pending', updated_at = CURRENT_TIMESTAMP "
-    "WHERE forecast_job.status IN ('complete', 'exhausted', 'superseded', 'errored', 'yielded') "
+    "WHERE forecast_job.status IN ('complete', 'exhausted', 'superseded', 'yielded') "
     "AND (forecast_job.input_revision != excluded.input_revision "
     "OR forecast_job.engine_version != excluded.engine_version "
     "OR (forecast_job.status = 'yielded' AND excluded.generation = forecast_job.generation + 1)) "
@@ -80,24 +80,28 @@ async def reconcile(db, workflows, job):
         await mark(db, job, "running")
 
 
-async def dispatch(db, workflows):
+async def dispatch(db, workflows, code=None):
     """Coalesce inputs, atomically claim each event, and reconcile interrupted dispatch."""
-    jobs = await db.prepare("SELECT * FROM forecast_job").all()
+    jobs = await db.prepare("SELECT * FROM forecast_job WHERE (? IS NULL OR event_code = ?)").bind(code, code).all()
     errors = await reconcile_jobs(db, workflows, jobs.results)
     inputs = (
         await db.prepare(
             "SELECT i.event_code, i.revision, j.input_revision, j.engine_version, j.generation, j.status "
             "FROM forecast_input i LEFT JOIN forecast_job j ON j.event_code = i.event_code "
-            "WHERE " + source_current("i") + " AND NOT EXISTS (SELECT 1 FROM forecast_state s "
+            "WHERE (? IS NULL OR i.event_code = ?) AND "
+            + source_current("i")
+            + " AND NOT EXISTS (SELECT 1 FROM forecast_state s "
             "WHERE s.event_code = i.event_code AND s.input_revision = i.revision AND s.engine_version = ? "
             "AND s.status IN ('complete', 'exhausted'))"
         )
-        .bind(ENGINE_VERSION)
+        .bind(code, code, ENGINE_VERSION)
         .all()
     )
     for row in inputs.results:
         same = row.input_revision == row.revision and row.engine_version == ENGINE_VERSION
-        if row.status is not None and (row.status not in TERMINAL or (same and row.status != "yielded")):
+        if row.status == "errored" or (
+            row.status is not None and (row.status not in TERMINAL or (same and row.status != "yielded"))
+        ):
             continue
         generation = row.generation + 1 if same else 0
         identifier = instance_id(row.event_code, row.revision, ENGINE_VERSION, generation)
@@ -145,16 +149,35 @@ async def retry_job(db, workflows, code, method="POST"):
     job = await db.prepare("SELECT * FROM forecast_job WHERE event_code = ?").bind(code).first()
     if job is None or job.status != "errored":
         return {"error": "no failed job to retry"}, 409
-    # Restarting this exact instance cannot create another concurrent computation.
-    await workflows.restart(job.instance_id)
-    await mark(db, job, "running")
-    return {"event": code, "instance_id": job.instance_id, "status": "running"}, 200
+    # Only an explicit request may release a failed event, even after inputs or code change.
+    released = (
+        await db.prepare(
+            "UPDATE forecast_job SET status = 'yielded', updated_at = CURRENT_TIMESTAMP "
+            "WHERE event_code = ? AND instance_id = ? AND status = 'errored' RETURNING instance_id"
+        )
+        .bind(code, job.instance_id)
+        .first()
+    )
+    if released is None:
+        return {"error": "job changed; read its current status"}, 409
+    # A fresh instance uses the current deployment and resumes the durable D1 checkpoint.
+    return await dispatch_job(db, workflows, code)
+
+
+async def dispatch_job(db, workflows, code, method="POST"):
+    if method != "POST":
+        return {"error": "method not allowed"}, 405
+    await dispatch(db, workflows, code)
+    job = await db.prepare("SELECT * FROM forecast_job WHERE event_code = ?").bind(code).first()
+    if job is None:
+        return {"error": "no job for current inputs"}, 404
+    return {"event": code, "instance_id": job.instance_id, "status": job.status}, 200
 
 
 async def run_job(db, payload, steps):
     for index in range(BATCHES_PER_INSTANCE):
 
-        @steps.do(f"batch-{index}")
+        @steps.do(f"batch-{index}", config={"retries": {"limit": 0, "delay": "10 seconds"}})
         async def batch():
             return await advance_job(db, payload)
 
