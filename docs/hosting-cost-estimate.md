@@ -4,6 +4,9 @@ Estimated October 21, 2026, using the [Cloudflare forecast benchmarks](forecast-
 2025–2026 Pennsylvania competition schedule. All amounts are USD. This applies October 2026 prices to a historical
 workload; it is not a historical invoice or a spending guarantee.
 
+The [worldwide DECODE estimate](worldwide-hosting-cost-estimate.md) extrapolates this workload to FIRST's published
+worldwide event catalog, with separate coverage and scaling assumptions.
+
 ## Expected cost
 
 The forecast workload is expected to fit within Workers Paid's included usage. The subscription therefore accounts
