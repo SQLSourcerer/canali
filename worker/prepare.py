@@ -47,6 +47,7 @@ for name in (
     "first_event.py",
     "components.py",
     "assemble.py",
+    "playoff_input.py",
 ):
     path = ROOT / "src" / name
     if path.exists():

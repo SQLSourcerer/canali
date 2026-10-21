@@ -170,9 +170,12 @@ def priors(event: Event, season: int, history: dict, config: Config, scale: Scal
     return result
 
 
-def replay(event: Event, season: int, history: dict, config: Config, scale: Scale) -> list[dict]:
+def replay(
+    event: Event, season: int, history: dict, config: Config, scale: Scale, *, playoffs=(), playoff_breakdowns=None
+) -> list[dict]:
     constants = for_season(season)
-    matches = list(event.stream(season))
+    qualifications = list(event.stream(season))
+    matches = [*qualifications, *playoffs]
     result = replay_season(
         matches,
         constants=constants,
@@ -193,13 +196,16 @@ def replay(event: Event, season: int, history: dict, config: Config, scale: Scal
         },
         breakdowns={
             (match.match_id, side): getattr(prepared, f"{side.lower()}_components")
-            for match, prepared in zip(matches, (m for m in event.matches if m.red_score is not None), strict=True)
+            for match, prepared in zip(
+                qualifications, (m for m in event.matches if m.red_score is not None), strict=True
+            )
             for side in ("RED", "BLUE")
         }
+        | (playoff_breakdowns or {})
         if config.rule_pack
         else None,
     )
-    counts = Counter(team for match in matches for team in (*match.red.teams, *match.blue.teams))
+    counts = Counter(team for match in qualifications for team in (*match.red.teams, *match.blue.teams))
     return [
         {
             "team": row.team_number,

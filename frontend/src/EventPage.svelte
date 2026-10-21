@@ -15,6 +15,7 @@
     type PartnerComparison,
     type PartnerResults,
     formatDate,
+    forecastBasis,
     type Forecast,
     type PublishedEvent,
   } from "./model";
@@ -316,9 +317,9 @@
       </p>
     </div>
     <div class="published">
-      <span class="status-dot" aria-hidden="true"></span> Published snapshot<br
+      <span class="status-dot" aria-hidden="true"></span> {forecastBasis(event.snapshot)}<br
       /><span
-        >{new Date(event.published_at).toLocaleString(undefined, {
+        >Published {new Date(event.published_at).toLocaleString(undefined, {
           dateStyle: "medium",
           timeStyle: "short",
         })}</span

@@ -1,10 +1,11 @@
-"""Build qualification-stage event snapshots from revision-linked D1 component ratings."""
+"""Build event snapshots from revision-linked component ratings and official progress."""
 
 import json
 
 from components import component_value
 from compute import integer, number
 from forecast_store import save_input
+from playoff_input import current_playoff, scored_playoffs
 from pydantic import Field, PositiveInt, model_validator
 from season import Config, Event, history_for, priors, read_priors, replay, state_for
 from snapshot import EventSnapshot, InputModel, ModelsInput, SeasonPrior
@@ -32,6 +33,9 @@ class AssemblyInput(InputModel):
     models: ModelsInput
     context: ContextInput
     selection_published: bool
+    alliances: dict | None = None
+    playoff_schedule: dict | None = None
+    playoff_scores: dict | None = None
     through: int | None = Field(default=None, ge=0, le=1000)
     seed: int = Field(default=42, ge=0)
     tolerance: float = Field(default=0.01, gt=0, le=0.5)
@@ -54,8 +58,7 @@ def assemble(
     cutoff = scored if options.through is None else options.through
     if cutoff > scored:
         raise ValueError("through exceeds the number of scored qualification matches")
-    if options.selection_published and cutoff == scored and options.through is None:
-        raise ValueError("assembly supports qualification-stage snapshots; choose an earlier through cutoff")
+    alliances, playoffs, playoff_breakdowns, decided = current_playoff(event, pack, options)
     truncated = event.model_copy(deep=True)
     retained = set()
     for match in truncated.matches:
@@ -65,7 +68,14 @@ def assemble(
             match.red_score = match.blue_score = None
             match.red_components = match.blue_components = None
     ratings = {row["number"]: row["components"] for row in priors(event, pack.season, history, config, scale)}
-    ratings.update({row["team"]: row["components"] for row in replay(truncated, pack.season, history, config, scale)})
+    ratings.update(
+        {
+            row["team"]: row["components"]
+            for row in replay(
+                truncated, pack.season, history, config, scale, playoffs=playoffs, playoff_breakdowns=playoff_breakdowns
+            )
+        }
+    )
     roster = {row["teamNumber"]: row for row in source["teams"]["teams"]}
     ages, rookies = {}, set()
     for team in teams:
@@ -78,6 +88,15 @@ def assemble(
             if year == pack.season:
                 rookies.add(team)
     schedule, progress = published_progress(event, source, retained, options, pack)
+    if alliances is not None:
+        progress["alliances"] = alliances
+        progress["decided"] = [
+            {"series": series, "game": game, "winner": winner} for (series, game), winner in decided.items()
+        ]
+    last_match = {"level": "QUALIFICATION", "number": max(retained)} if retained else None
+    if playoffs:
+        row, series, key, _ = list(scored_playoffs(options.playoff_schedule))[-1]
+        last_match = {"level": row["tournamentLevel"], "number": key[1], "series": series}
     return EventSnapshot(
         rule_pack=pack,
         field={
@@ -94,7 +113,8 @@ def assemble(
         schedule=schedule,
         progress=progress,
         slots=context.slots,
-        as_of_match=cutoff,
+        as_of_match=cutoff + len(playoffs),
+        last_match=last_match,
         **options.model_dump(include={"seed", "tolerance", "min_iterations", "max_iterations", "matches_per_team"}),
     )
 

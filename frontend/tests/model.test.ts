@@ -9,9 +9,23 @@ import {
   forecastChange,
   validateComparison,
   hasRemainingQualifications,
+  forecastBasis,
   type PublishedEvent,
   type Snapshot,
 } from "../src/model.ts";
+
+test("forecast basis identifies the included official match or event stage", () => {
+  const snapshot = { last_match: null, progress: { played: [true, false, true] } } as Snapshot;
+  snapshot.last_match = { level: "QUALIFICATION", number: 7 };
+  assert.equal(forecastBasis(snapshot), "Through qualification match 7");
+  snapshot.progress!.alliances = [[1, 2], [3, 4]];
+  assert.equal(forecastBasis(snapshot), "After alliance selection");
+  snapshot.last_match = { level: "FINAL", number: 3, series: 1 };
+  assert.equal(forecastBasis(snapshot), "Through final series 1, match 3");
+  snapshot.last_match = null;
+  snapshot.progress = null;
+  assert.equal(forecastBasis(snapshot), "Before qualification matches");
+});
 
 test("LEAVE eligibility uses the selected team's unplayed appearances", () => {
   const snapshot = {

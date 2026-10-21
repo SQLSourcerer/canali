@@ -8,8 +8,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from warehouse.ingest.client import FtcEventsClient
-
 
 def checked(response):
     if response.status_code not in (200, 202):
@@ -17,7 +15,31 @@ def checked(response):
     return response.json()
 
 
+def stage_options(first, season, code, *, historical=False, after_qualifications=False):
+    alliances = first.alliances(season, code)
+    if alliances.status != 200:
+        raise SystemExit(f"FIRST alliances HTTP {alliances.status}; stage could not be verified")
+    body = {"selection_published": bool(alliances.data.get("alliances"))}
+    if body["selection_published"] and not historical and not after_qualifications:
+        playoff = first.hybrid_schedule(season, code, "playoff")
+        scores = first.scores(season, code, "playoff")
+        if playoff.status != 200 or scores.status != 200:
+            raise SystemExit(f"FIRST playoff HTTP {playoff.status}/{scores.status}")
+        body.update(alliances=alliances.data, playoff_schedule=playoff.data, playoff_scores=scores.data)
+    if after_qualifications:
+        schedule = first.hybrid_schedule(season, code, "qual")
+        if schedule.status != 200:
+            raise SystemExit(f"FIRST schedule HTTP {schedule.status}")
+        matches = schedule.data["schedule"]
+        if not matches or any(row.get("scoreRedFinal") is None or row.get("scoreBlueFinal") is None for row in matches):
+            raise SystemExit("a complete scored qualification schedule is required")
+        body["through"] = len(matches)
+    return body
+
+
 def main():
+    from warehouse.ingest.client import FtcEventsClient
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("season", type=int)
     parser.add_argument("event_code")
@@ -55,20 +77,15 @@ def main():
         if key in models:
             body[key] = models[key]
     with FtcEventsClient() as first:
-        alliances = first.alliances(args.season, args.event_code)
-        if alliances.status != 200:
-            raise SystemExit(f"FIRST alliances HTTP {alliances.status}; stage could not be verified")
-        body["selection_published"] = bool(alliances.data.get("alliances"))
-        if args.after_qualifications:
-            schedule = first.hybrid_schedule(args.season, args.event_code, "qual")
-            if schedule.status != 200:
-                raise SystemExit(f"FIRST schedule HTTP {schedule.status}")
-            matches = schedule.data["schedule"]
-            if not matches or any(
-                row.get("scoreRedFinal") is None or row.get("scoreBlueFinal") is None for row in matches
-            ):
-                raise SystemExit("a complete scored qualification schedule is required")
-            body["through"] = len(matches)
+        body.update(
+            stage_options(
+                first,
+                args.season,
+                args.event_code,
+                historical=args.through is not None,
+                after_qualifications=args.after_qualifications,
+            )
+        )
     key = f"{args.season}-{args.event_code}"
     archive = Path(__file__).resolve().parents[1] / "var" / "worker-forecast" / key
     with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=120) as worker:

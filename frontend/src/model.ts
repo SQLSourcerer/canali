@@ -29,7 +29,12 @@ export type Snapshot = {
     };
   };
   schedule: { stations: number[][][] } | null;
-  progress: { played: boolean[]; decided?: unknown[] } | null;
+  progress: { played: boolean[]; decided?: unknown[]; alliances?: number[][] | null } | null;
+  last_match: {
+    level: "QUALIFICATION" | "PLAYOFF" | "SEMIFINAL" | "FINAL";
+    number: number;
+    series?: number | null;
+  } | null;
   slots: unknown;
   seed: number;
   min_iterations: number;
@@ -74,6 +79,17 @@ export type PublishedEvent = Omit<
   snapshot: Snapshot;
   forecast: Forecast;
 };
+
+export function forecastBasis(snapshot: Snapshot): string {
+  const last = snapshot.last_match;
+  if (last && last.level !== "QUALIFICATION") {
+    const stage = { PLAYOFF: "Playoff", SEMIFINAL: "Semifinal", FINAL: "Final" }[last.level];
+    return `Through ${stage.toLowerCase()} ${last.series ? `series ${last.series}, ` : ""}match ${last.number}`;
+  }
+  if (snapshot.progress?.alliances) return "After alliance selection";
+  if (last) return `Through qualification match ${last.number}`;
+  return "Before qualification matches";
+}
 
 export function hasRemainingQualifications(snapshot: Snapshot, team: string): boolean {
   return snapshot.schedule?.stations.some(

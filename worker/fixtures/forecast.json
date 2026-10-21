@@ -1132,6 +1132,7 @@
     ],
     "first_championship": null
   },
+  "last_match": {"level": "QUALIFICATION", "number": 2},
   "seed": 87,
   "min_iterations": 1000,
   "max_iterations": 2000,

@@ -118,6 +118,7 @@ def test_current_components_and_progress_equal_native_at_cutoff(fixture):
         if row.tag == TAG_POST_EVENT:
             assert snapshot.field.predicted[row.team_number] == row.components
     assert snapshot.as_of_match == 1
+    assert snapshot.last_match.model_dump() == {"level": "QUALIFICATION", "number": 1, "series": None}
     assert snapshot.progress.played == [True, False]
     assert snapshot.progress.score == [[120, 80], [0, 0]]
     assert snapshot.progress.components["preFoulTotal"] == [[120, 80], [0, 0]]

@@ -121,6 +121,12 @@ class SeasonPrior(InputModel):
     revision: int = Field(ge=1)
 
 
+class MatchReference(InputModel):
+    level: Literal["QUALIFICATION", "PLAYOFF", "SEMIFINAL", "FINAL"]
+    number: int = Field(ge=1)
+    series: int | None = Field(default=None, ge=1)
+
+
 class EventSnapshot(InputModel):
     rule_pack: RulePack
     field: EventField
@@ -135,6 +141,7 @@ class EventSnapshot(InputModel):
     max_iterations: int = Field(default=10_000, ge=1, le=100_000)
     season_prior: SeasonPrior | None = None
     as_of_match: int | None = Field(default=None, ge=0, le=1000)
+    last_match: MatchReference | None
 
     @model_validator(mode="after")
     def check_event(self) -> Self:
