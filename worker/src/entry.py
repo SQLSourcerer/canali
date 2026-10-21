@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from access import allowed
 from assemble import handle as handle_assembly
 from compute import compute, validate
+from dispatch import dispatch, retry_job, run_job
 from engine_version import ENGINE_VERSION
 from first_event import handle as handle_import
 from forecast_store import export as export_forecast
@@ -14,12 +15,40 @@ from forecast_store import handle as handle_forecast
 from forecast_store import upload_result
 from season import handle as handle_season
 from season import source_current
-from workers import Response, WorkerEntrypoint
+from workers import Response, WorkerEntrypoint, WorkflowEntrypoint
 
 MAX_BODY = 512_000
 
 
+class WorkflowBinding:
+    def __init__(self, binding):
+        self.binding = binding
+
+    async def ensure(self, identifier, payload):
+        try:
+            await self.binding.create({"id": identifier, "params": payload})
+        except Exception:
+            # Duplicate IDs and lost create responses are safe only if the instance exists.
+            await self.binding.get(identifier)
+
+    async def status(self, identifier):
+        instance = await self.binding.get(identifier)
+        return (await instance.status()).status
+
+    async def restart(self, identifier):
+        instance = await self.binding.get(identifier)
+        await instance.restart()
+
+
+class ForecastWorkflow(WorkflowEntrypoint):
+    async def run(self, event, step):
+        return await run_job(self.env.DB, event["payload"], step)
+
+
 class Default(WorkerEntrypoint):
+    async def scheduled(self, _controller, _env, _ctx):
+        await dispatch(self.env.DB, WorkflowBinding(self.env.FORECAST_WORKFLOW))
+
     async def fetch(self, request):
         if not allowed(self.env, request):
             return Response.json({"error": "access denied"}, status=403)
@@ -58,12 +87,14 @@ class Default(WorkerEntrypoint):
                 return Response.json(report, status=status)
             except (ValueError, KeyError, TypeError) as exc:
                 return Response.json({"error": str(exc)}, status=400)
-        forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step|/export|/result)?", path)
+        forecast_route = re.fullmatch(r"/forecasts/([A-Za-z0-9_-]{1,64})(/step|/export|/result|/retry)?", path)
         if forecast_route is not None:
             code, step = forecast_route.groups()
             try:
                 report, status = (
-                    await upload_result(self.env.DB, request, code)
+                    await retry_job(self.env.DB, WorkflowBinding(self.env.FORECAST_WORKFLOW), code, request.method)
+                    if step == "/retry"
+                    else await upload_result(self.env.DB, request, code)
                     if step == "/result"
                     else await export_forecast(self.env.DB, request, code)
                     if step == "/export"

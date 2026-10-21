@@ -192,7 +192,7 @@ async def save_input(db, code: str, snapshot: EventSnapshot) -> tuple[dict, int]
     return {"event": code, "revision": row.revision}, 200
 
 
-async def step(db, code: str) -> tuple[dict, int]:
+async def step(db, code: str, *, expected_revision=None, expected_engine=None) -> tuple[dict, int]:
     source = (
         await db.prepare(
             "SELECT revision, document FROM forecast_input i WHERE event_code = ? AND " + source_current("i")
@@ -203,6 +203,10 @@ async def step(db, code: str) -> tuple[dict, int]:
     if source is None:
         return {"error": "event not found"}, 404
     revision = source.revision
+    if (expected_revision is not None and expected_revision != revision) or (
+        expected_engine is not None and expected_engine != ENGINE_VERSION
+    ):
+        return {"error": "input or engine changed"}, 409
     await db.prepare(INITIALIZE).bind(ENGINE_VERSION, code, revision).run()
     state = await db.prepare(READ_STATE).bind(code, ENGINE_VERSION).first()
     if state is None or state.input_revision != revision:

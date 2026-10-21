@@ -284,6 +284,52 @@ The default configuration permits unauthenticated requests only on loopback host
 environment requires a bearer token for every request, including reads and health checks. Local success does not
 establish that the engine fits the production 128 MB memory limit.
 
+## Unattended forecast computation
+
+The `ForecastWorkflow` advances stored snapshots without a client driving `/step` requests. The local configuration
+includes a minute-based Cron Trigger; the hosted benchmark keeps `crons = []` so benchmarks remain operator-driven.
+To enable hosted dispatch, apply migration `0006_forecast_jobs.sql`, set `env.benchmark.triggers.crons` to
+`["* * * * *"]` and deploy the matching backend. This schedules every current stored snapshot that has no completed
+or exhausted result. It does not fetch FIRST data, replay seasons, assemble snapshots, or export and deploy the public
+site. Those stages still need their existing native commands. Competition-day automation must supply updated
+snapshots, including calibrated models and current event context, before this dispatcher can compute them.
+
+The latest `forecast_input` is the desired revision. An atomic D1 claim records one active job per event, and its
+Workflow instance ID is derived from the event, input revision, engine and continuation generation. Identical snapshot
+uploads preserve the revision. Repeated or concurrent ticks recover the same instance, including when a dispatcher
+stops between saving the claim and creating the Workflow. Ownership has no timeout: a slow run retains its claim until
+Cloudflare reports that it has stopped. Paused instances continue holding their event.
+
+New inputs coalesce while that job runs. If revisions 43 and 44 arrive during revision 42, the next job uses revision
+44. Each batch checks ownership, expected revision and engine; existing atomic checkpoint writes reject stale inputs,
+season dependencies and duplicate writes. The dispatcher never makes an old job compute a newer snapshot. Completed
+and exhausted outcomes remain in D1 after Workflow retention expires. Exhaustion requires revised simulation settings
+or inputs before another automatic run; it is not treated as a converged forecast.
+
+Each instance executes at most 256 bounded batches. If more work remains, the next tick starts a serial continuation
+with a new generation and the existing D1 checkpoint. Workflow steps retry transient failures. An instance that ends
+errored or terminated is recorded as `errored` and is not automatically restarted for the same inputs. Dispatch errors
+are logged by event and cause the scheduled invocation to fail after attempting the other events.
+
+Inspect instance status in Cloudflare Workflows and ownership with a D1 query:
+
+```powershell
+uv run pywrangler d1 execute canali-benchmark --env benchmark --remote --command "SELECT * FROM forecast_job"
+```
+
+After resolving a failure, send an authenticated `POST /forecasts/{code}/retry` to restart that exact instance and resume
+its D1 checkpoint. This route accepts only recorded failed jobs. Retry a lost restart response by repeating the request;
+a running job returns 409. If Cloudflare has already expired or deleted the failed instance, supply a new snapshot
+revision instead. New input or engine revisions can also supersede a failed job on the next scheduled tick. For a local
+runtime check, start `pywrangler dev --test-scheduled`, upload a snapshot and invoke Wrangler's local scheduled API:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8787/cdn-cgi/local/explorer/api/local/scheduled?worker=canali-local' -ContentType 'application/json' -Body '{"cron":"* * * * *"}'
+```
+
+Read `/forecasts/{code}` until it reports `complete` or `exhausted`. Calling the scheduled API repeatedly preserves
+the same active instance. Apply local migrations before starting the server, as in the local setup above.
+
 ## Compute locally and publish to hosted D1
 
 The native runner uses the same event simulator as the Worker. D1 retains the frozen inputs and completed forecast;
@@ -479,3 +525,5 @@ on snapshot writes, checkpoint writes and result reads. A SQLite-backed assemble
 simulation.
 Access tests cover fail-closed hosted authentication and loopback-only local access. Benchmark client tests cover
 progress, request budgets and HTTP failures.
+Dispatcher tests cover concurrent ticks, interrupted creation, revision coalescing, persistent completion, explicit
+failure recovery, serial continuation and stale-job rejection, using the actual migration and claim SQL against SQLite.

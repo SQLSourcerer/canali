@@ -1,7 +1,7 @@
 name = "canali-local"
 main = "src/entry.py"
 compatibility_date = "2026-10-19"
-compatibility_flags = ["python_workers"]
+compatibility_flags = ["python_workers", "python_workflows"]
 workers_dev = false
 
 [python_modules]
@@ -28,6 +28,14 @@ migrations_dir = "migrations"
 [vars]
 LOCAL_PROTOTYPE = "true"
 
+[[workflows]]
+name = "canali-local-forecasts"
+binding = "FORECAST_WORKFLOW"
+class_name = "ForecastWorkflow"
+
+[triggers]
+crons = ["* * * * *"]
+
 # Opt in explicitly with --env benchmark; never shares the local database.
 [env.benchmark]
 name = "canali-benchmark"
@@ -37,6 +45,16 @@ preview_urls = false
 [env.benchmark.vars]
 LOCAL_PROTOTYPE = "false"
 BENCHMARK = "true"
+
+[[env.benchmark.workflows]]
+name = "canali-benchmark-forecasts"
+binding = "FORECAST_WORKFLOW"
+class_name = "ForecastWorkflow"
+
+[env.benchmark.triggers]
+# Benchmark runs remain operator-driven; opt in to unattended dispatch by adding
+# "* * * * *" here before deployment.
+crons = []
 
 [env.benchmark.secrets]
 required = ["BENCHMARK_TOKEN"]
